@@ -1,0 +1,29 @@
+{
+  "name": "kemps-schedule-updater",
+  "version": "1.0.0",
+  "description": "Advanced script to update Kemps.html with class schedule data from CSV",
+  "main": "updateKempsSchedule.js",
+  "scripts": {
+    "update": "node updateKempsSchedule.js",
+    "test": "node updateKempsSchedule.js"
+  },
+  "keywords": [
+    "schedule",
+    "csv",
+    "html",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "cheerio": "^1.0.0-rc.12",
+    "csv-parse": "^5.5.0",
+    "dotenv": "^17.2.3",
+    "googleapis": "^126.0.1",
+    "open": "^11.0.0",
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^2.4.5",
+    "puppeteer": "^23.0.0"
+  }
+}
