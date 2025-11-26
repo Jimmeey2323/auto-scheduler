@@ -18,19 +18,28 @@
         
         /* Style for theme badges */
         .theme-badge {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #022c22 0%, #064e3b 50%, #065f46 100%);
             color: white;
-            padding: 3px 8px;
-            border-radius: 12px;
+            padding: 4px 10px;
+            border-radius: 0 15px 15px 0;
             font-size: 9px;
-            font-weight: 600;
+            font-weight: 700;
             margin-left: 6px;
             display: inline-block;
             vertical-align: middle;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            border: 1px solid rgba(255,255,255,0.2);
-            letter-spacing: 0.3px;
+            line-height: 1.2;
+            box-shadow: 0 3px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.25);
+            letter-spacing: 0.2px;
             text-transform: uppercase;
+            min-width: fit-content;
+            max-width: 180px;
+            text-align: center;
+            white-space: normal;
+            word-wrap: break-word;
+            position: relative;
+            top: -1px;
+            transform: translateX(-2px);
         }
         .page-container {
             margin: 10px auto;

@@ -2663,16 +2663,17 @@ class ScheduleUpdater {
 
     /**
      * Comprehensive cleanup of all existing theme badges from HTML content
+     * This only removes actual theme badge elements, not class name spans
      */
     cleanupAllThemeBadges() {
         console.log('🧹 Starting comprehensive theme badge cleanup...');
         
-        // Remove by CSS class
+        // Remove by CSS class - this removes the actual theme badge spans
         const themeBadges = this.$('.theme-badge');
         console.log(`   Found ${themeBadges.length} theme-badge elements to remove`);
         themeBadges.remove();
         
-        // Get all spans and check for theme badge content
+        // Get all spans and check for standalone theme badge content
         const allSpans = this.$('span');
         let removedCount = 0;
         
@@ -2680,9 +2681,14 @@ class ScheduleUpdater {
             const $span = this.$(element);
             const spanText = $span.text().trim();
             
-            // Check for lightning bolt emojis or theme patterns
-            if (/[⚡️⚡]/.test(spanText) || /\b(?:POWER|THEME|SPECIAL)\s/i.test(spanText)) {
-                console.log(`   Removing span with theme content: "${spanText.substring(0, 50)}..."`);
+            // Only remove spans that are clearly standalone theme indicators,
+            // NOT class names like "PowerCycle - Instructor"
+            const hasLightningEmoji = /[⚡️⚡]/.test(spanText);
+            const isStandaloneThemeKeyword = /^\s*(?:POWER|THEME|SPECIAL)\s*$/i.test(spanText);
+            
+            // Only remove if it's clearly a theme badge, not a class description
+            if (hasLightningEmoji || isStandaloneThemeKeyword) {
+                console.log(`   Removing span with theme badge content: "${spanText.substring(0, 50)}${spanText.length > 50 ? '...' : ''}"`);
                 $span.remove();
                 removedCount++;
             }
@@ -2820,7 +2826,7 @@ class ScheduleUpdater {
         };
 
         // First, clean up all existing theme badges to prevent duplicates
-        this.cleanupAllThemeBadges(this.$);
+        this.cleanupAllThemeBadges();
 
         // Track updated day+time to prevent duplicates within a day
         const updatedCombos = new Set();
@@ -2933,18 +2939,23 @@ class ScheduleUpdater {
                         // Enhanced badge removal - check for CSS classes, inline patterns, and content
                         const hasThemeClass = $currentSpan.hasClass('theme-badge');
                         const hasOldTheme = /[⚡️⚡]/.test(spanText);
-                        const hasThemeText = /\b(?:theme|power|cycle|fit|barre|amped)\b/i.test(spanText);
+                        const hasOldThemeText = /\b(?:theme|special)\b/i.test(spanText);
                         
-                        if (hasThemeClass || hasOldTheme) {
-                            console.log(`      ↳ Contains theme badge (class: ${hasThemeClass}, pattern: ${hasOldTheme}), will remove`);
-                        }
-                        
+                        // Only mark for removal if it's not the first span (which contains class info) 
+                        // OR if it's clearly a theme badge
                         if (!firstContentSpan) {
                             firstContentSpan = $currentSpan;
-                            console.log(`      ↳ Marked as firstContentSpan`);
+                            console.log(`      ↳ Marked as firstContentSpan (class content)`);
+                            // For the first span, we'll replace its content entirely, so always add to removal list
+                            spansToRemove.push($currentSpan);
+                            console.log(`      ↳ First span will be replaced with updated content`);
+                        } else if (hasThemeClass || hasOldTheme || hasOldThemeText) {
+                            // Remove subsequent spans only if they contain actual theme badge content
+                            spansToRemove.push($currentSpan);
+                            console.log(`      ↳ Subsequent span contains theme badge content (class: ${hasThemeClass}, emoji: ${hasOldTheme}, text: ${hasOldThemeText}), added to removal list`);
+                        } else {
+                            console.log(`      ↳ Clean subsequent span, keeping unchanged`);
                         }
-                        spansToRemove.push($currentSpan);
-                        console.log(`      ↳ Added to removal list`);
                     } else if (current.type === 'tag' && current.name !== 'span') {
                         console.log(`      Sibling #${siblingsProcessed}: <${current.name}> (non-span tag) - stopping scan`);
                         break;
