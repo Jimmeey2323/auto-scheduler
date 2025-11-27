@@ -243,7 +243,68 @@ a[href*="idrsolutions.com"] { display: none !important; }
 
 
 
-        </head>
+        
+                <style>
+                    /* Completely remove annotations container */
+                    .annotations-container,
+                    .annotations-container * {
+                        display: none !important;
+                        visibility: hidden !important;
+                        opacity: 0 !important;
+                        position: absolute !important;
+                        width: 0 !important;
+                        height: 0 !important;
+                        overflow: hidden !important;
+                    }
+                    
+                    /* Hide IDR Solutions links */
+                    a[href*="idrsolutions.com"],
+                    a[href*="idrsolutions"] {
+                        display: none !important;
+                        visibility: hidden !important;
+                    }
+                    
+                    /* Ensure consistent font rendering for all text */
+                    * {
+                        -webkit-font-smoothing: antialiased !important;
+                        -moz-osx-font-smoothing: grayscale !important;
+                        text-rendering: optimizeLegibility !important;
+                    }
+                    
+                    /* Force background and color rendering */
+                    body, .page, * {
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                        color-adjust: exact !important;
+                    }
+                    
+                    /* Remove any potential overlays or popups */
+                    [class*="popup"],
+                    [class*="overlay"],
+                    [class*="modal"] {
+                        display: none !important;
+                    }
+                    
+                    /* Ensure theme-related elements are completely hidden (except badges) */
+                    .theme-index,
+                    #theme-index,
+                    .legend,
+                    .theme-legend,
+                    .index-legend {
+                        display: none !important;
+                        visibility: hidden !important;
+                        position: absolute !important;
+                        width: 0 !important;
+                        height: 0 !important;
+                        overflow: hidden !important;
+                    }
+                    
+                    /* Hide any page beyond the first 2 pages */
+                    .page-container:nth-child(n+3) {
+                        display: none !important;
+                    }
+                </style>
+            </head>
 <body>
 
 <div class="page-container">
@@ -284,7 +345,7 @@ INTERMEDIATE • CARDIO BARRE • MAT 57 • INTERMEDIATE • CARDIO BARRE • M
 
 <span class="t v0 s23" style="left:73px;bottom:615px;"><span>6:15</span><span>PM</span></span><span class="t v0 s5" style="left: 159px; bottom: 616px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; font-style: normal; text-transform: none; color: #1a1a1a; display: inline-block; max-width: 802px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">BARRE 57 - MRIGAKSHI</span>
 
-<span class="t v0 s23" style="left:73px;bottom:591px;"><span>7:30</span><span>PM</span></span><span class="t v0 s6" style="left: 159px; bottom: 591px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; font-style: normal; text-transform: none; color: #1a1a1a; display: inline-block; max-width: 500px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">powerCycle - BRET<span class="theme-badge" style="background: linear-gradient(135deg, #022c22 0%, #064e3b 50%, #065f46 100%); color: white; padding: 3px 8px 3px 6px; border-radius: 0 12px 12px 0; font-size: 8px; font-weight: 700; margin-left: 6px; display: inline-block; vertical-align: middle; line-height: 1.3; box-shadow: 0 2px 6px rgba(0,0,0,0.4); letter-spacing: 0.1px; text-transform: uppercase; min-width: fit-content; max-width: 180px; text-align: center; white-space: normal; word-wrap: break-word; border: 1px solid rgba(255,255,255,0.2); position: relative; top: -1px">⚡️ ROCK VS TECHNO</span></span>
+<span class="t v0 s23" style="left:73px;bottom:591px;"><span>7:30</span><span>PM</span></span><span class="t v0 s6" style="left: 159px; bottom: 591px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; font-style: normal; text-transform: none; color: #1a1a1a; display: inline-block; max-width: 500px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">powerCycle - BRET</span>
 
 <span class="t v0 s23" style="left:73px;bottom:566px;"><span>7:30</span><span>PM</span></span><span class="t v0 s6" style="left: 159px; bottom: 567px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">FIT - MRIGAKSHI</span>
 
@@ -303,7 +364,7 @@ INTERMEDIATE • CARDIO BARRE • MAT 57 • INTERMEDIATE • CARDIO BARRE • M
 <span class="t v0 s9" style="left:478px;bottom:787px;"><span>7:15</span><span>AM</span></span><span class="t v0 s5" style="left: 564px; bottom: 788px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; font-style: normal; text-transform: none; color: #1a1a1a; display: inline-block; max-width: 397px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">BARRE 57 - KARAN</span>
 
 
-<span class="t v0 s9" style="left:478px;bottom:763px;"><span>8:00</span><span>AM</span></span><span class="t v0 s6" style="left: 564px; bottom: 763px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; font-style: normal; text-transform: none; color: #1a1a1a; display: inline-block; max-width: 397px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">powerCycle - VIVARAN<span class="theme-badge" style="background: linear-gradient(135deg, #022c22 0%, #064e3b 50%, #065f46 100%); color: white; padding: 3px 8px 3px 6px; border-radius: 0 12px 12px 0; font-size: 8px; font-weight: 700; margin-left: 6px; display: inline-block; vertical-align: middle; line-height: 1.3; box-shadow: 0 2px 6px rgba(0,0,0,0.4); letter-spacing: 0.1px; text-transform: uppercase; min-width: fit-content; max-width: 180px; text-align: center; white-space: normal; word-wrap: break-word; border: 1px solid rgba(255,255,255,0.2); position: relative; top: -1px">⚡️ RETRO -FUTURE NOSTALGIA</span></span>
+<span class="t v0 s9" style="left:478px;bottom:763px;"><span>8:00</span><span>AM</span></span><span class="t v0 s6" style="left: 564px; bottom: 763px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; font-style: normal; text-transform: none; color: #1a1a1a; display: inline-block; max-width: 397px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">powerCycle - VIVARAN</span>
 
 
 <span class="t v0 s9" style="left:478px;bottom:738px;"><span>8:30</span><span>AM</span></span><span class="t v0 s5" style="left: 564px; bottom: 739px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; font-style: normal; text-transform: none; color: #1a1a1a; display: inline-block; max-width: 397px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">CARDIO BARRE EXPRESS - KARAN</span>
@@ -655,5 +716,17 @@ INTERMEDIATE • CARDIO BARRE • MAT 57 • INTERMEDIATE • CARDIO BARRE • M
         pages[pageNo - 1].appendChild(annotationsContainer);
     });
 </script>
-</body> 
+
+                <script>
+                    document.addEventListener('DOMContentLoaded', function() {
+                        // Remove all annotation containers
+                        const annotations = document.querySelectorAll('.annotations-container');
+                        annotations.forEach(el => el.remove());
+                        
+                        // Remove IDR links
+                        const idrLinks = document.querySelectorAll('a[href*="idrsolutions"]');
+                        idrLinks.forEach(el => el.remove());
+                    });
+                </script>
+            </body> 
 </html>

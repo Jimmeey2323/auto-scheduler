@@ -18,19 +18,19 @@
         
         /* Style for theme badges */
         .theme-badge {
-            background: linear-gradient(135deg, #022c22 0%, #064e3b 50%, #065f46 100%);
+            background: linear-gradient(135deg, #047857 0%, #065f46 50%, #064e3b 100%);
             color: white;
-            padding: 4px 10px;
-            border-radius: 0 15px 15px 0;
+            padding: 5px 14px;
+            border-radius: 0 14px 14px 0;
             font-size: 9px;
             font-weight: 700;
-            margin-left: 6px;
+            margin-left: 14px;
             display: inline-block;
             vertical-align: middle;
-            line-height: 1.2;
-            box-shadow: 0 3px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.25);
-            letter-spacing: 0.2px;
+            line-height: 1.3;
+            box-shadow: 0 4px 12px rgba(4, 120, 87, 0.5), 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            letter-spacing: 0.4px;
             text-transform: uppercase;
             min-width: fit-content;
             max-width: 180px;
@@ -39,7 +39,33 @@
             word-wrap: break-word;
             position: relative;
             top: -1px;
-            transform: translateX(-2px);
+        }
+        
+        /* Style for sold out classes */
+        .sold-out {
+            text-decoration: line-through;
+            text-decoration-color: #f20000;
+            text-decoration-thickness: 2.5px;  
+            opacity: 1.0;          
+        }
+        
+        .sold-out-badge {
+            background: #dc2626;
+            color: white;
+            padding: 5px 14px;
+            border-radius: 0 14px 14px 0;
+            font-size: 9px;
+            font-weight: 700;
+            margin-left: 14px;
+            display: inline-block;
+            vertical-align: middle;
+            line-height: 1.0;
+            box-shadow: 0 4px 4px rgb(0, 0, 0);
+            border: 0px solid rgba(255, 255, 255, 0.2);
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            position: relative;
+            top: -1px;
         }
         .page-container {
             margin: 10px auto;
@@ -140,7 +166,7 @@ src: url(data:application/font-woff;charset=utf-8;base64,d09GRk9UVE8AAAeUAAkAAAA
 <style type="text/css">
 
 .s0{font-size:12px;font-family:Montserrat-Regular_20;color:#2C2D2D;}
-.s1{font-size:11px;font-family:MyriadPro-Regular_24;color:#2C2D2D;}
+.s1{font-size:11px;font-family:Montserrat-Regular_24;color:#2C2D2D;}
 .s2{font-size:11px;font-family:Montserrat-Regular_20;color:#2C2D2D;}
 .s3{font-size:29px;font-family:Agrandir-GrandHeavy_23;color:#F4F6E3;}
 .s4{font-size:25px;font-family:Agrandir-GrandHeavy_23;color:#2C2D2D;}
@@ -148,12 +174,34 @@ src: url(data:application/font-woff;charset=utf-8;base64,d09GRk9UVE8AAAeUAAkAAAA
 .s6{font-size:13px;font-family:Montserrat-Medium_1-;color:#2C2D2D;}
 .s7{font-size:14px;font-family:Montserrat-Medium_29;color:#2C2D2D;}
 .s8{font-size:13px;font-family:Montserrat-Medium_29_1;color:#2C2D2D;}
-.s9{font-size:14px;font-family:Montserrat-Bold_1z;color:#33B0E5;}
-.s23{font-size:13px;font-family:Montserrat-Bold_1z;color:#33B0E5;}
+.s9{
+    font-size:13px;
+    font-family:Montserrat-Bold_1z;
+    color:#65C3E9;
+    width:75px;
+    display:inline-flex;
+    justify-content:space-between;
+    align-items:center;
+    white-space:nowrap;
+    letter-spacing:0px;
+    text-indent:0px;
+}
+.s23{
+    font-size:13px;
+    font-family:Montserrat-Bold_1z;
+    color:#65C3E9;
+    width:75px;
+    display:inline-flex;
+    justify-content:space-between;
+    align-items:center;
+    white-space:nowrap;
+    letter-spacing:0px;
+    text-indent:0px;
+}
 .sa{font-size:14px;font-family:Montserrat-Medium_1-;color:#2C2D2D;}
 .sb{font-size:17px;font-family:Montserrat-Medium_29;color:#2C2D2D;}
 .sc{font-size:49px;font-family:Agrandir-GrandHeavy_23;color:#2C2D2D;}
-.sd{font-size:42px;font-family:IvyPrestoDisplay-BoldItalic_22;color:#6CCBF2;}
+.sd{font-size:52px;font-family:IvyPrestoDisplay-BoldItalic_22;color:#65C3E9;}
 .se{font-size:9px;font-family:Montserrat-Bold_21;color:#F4F6E3;}
 .sf{font-size:14px;font-family:Montserrat-Medium_29_1;color:#2C2D2D;}
 .sg{font-size:13px;font-family:Montserrat-Medium_1-;color:#231F20;}
@@ -195,139 +243,139 @@ INTERMEDIATE • CARDIO BARRE • MAT 57 • INTERMEDIATE • CARDIO BARRE • M
 
 <span class="t m1 s2" style="left:890.1px;bottom:1280.5px;font-size:11px;letter-spacing:0.03px;">FOUNDATION : BARRE 57 • FOUNDATION : BARRE 57 • FOUNDATION : BARRE 57 • FOUNDATION : BARRE 57 • FOUNDATION : BARRE 57 • FOUNDAT </span>
 <span class="t m1 s2" style="left:889.9px;bottom:453.5px;letter-spacing:0.03px;">FOUNDATION : BARRE 57 • FOUNDATION : BARRE 57 • FOUNDATION : BARRE 57 </span>
-<span class="t s3" style="left:682px;bottom:1160px;letter-spacing:-0.79px;">KEMPS </span>
-<span class="t s3" style="left:666px;bottom:1130px;letter-spacing:-0.78px;">CORNER </span>
+<span class="t s3" style="left:682px;bottom:1180px;letter-spacing:-0.79px;">KEMPS </span>
+<span class="t s3" style="left:666px;bottom:1150px;letter-spacing:-0.78px;">CORNER </span>
 
 <!-- Monday -->
 
 <span class="t v0 s4" style="left:73px;bottom:824px;letter-spacing:-0.48px;">MONDAY </span>
-<span class="t v0 s23" style="left:73px;bottom:787px;letter-spacing:-0.11px;">7:15 AM</span><span class="t v0 s5" style="left: 159px; bottom: 788px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Strength Lab (Pull) - Anisha</span>
+<span class="t v0 s23" style="left:73px;bottom:787px;"><span>7:15</span><span>AM</span></span><span class="t v0 s5" style="left: 159px; bottom: 788px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (PULL) - ANISHA</span>
 
 
-<span class="t v0 s23" style="left:73px;bottom:763px;letter-spacing:-0.11px;">7:30 AM </span><span class="t v0 s6" style="left: 159px; bottom: 763px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Simonelle</span>
+<span class="t v0 s23" style="left:73px;bottom:763px;"><span>7:30</span><span>AM</span></span><span class="t v0 s6" style="left: 159px; bottom: 763px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - SIMONELLE</span>
 
 
-<span class="t v0 s23" style="left:73px;bottom:738px;letter-spacing:-0.10px;">8:00 AM </span><span class="t v0 s6" style="left: 159px; bottom: 739px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Rohan</span>
+<span class="t v0 s23" style="left:73px;bottom:738px;"><span>8:00</span><span>AM</span></span><span class="t v0 s6" style="left: 159px; bottom: 739px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - ROHAN</span>
 
 
-<span class="t v0 s23" style="left:73px;bottom:714px;letter-spacing:-0.11px;">8:30 AM </span><span class="t v0 s6" style="left: 159px; bottom: 714px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Mat 57 - Anisha</span>
+<span class="t v0 s23" style="left:73px;bottom:714px;"><span>8:30</span><span>AM</span></span><span class="t v0 s6" style="left: 159px; bottom: 714px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">MAT 57 - ANISHA</span>
 
 
-<span class="t v0 s23" style="left:73px;bottom:689px;letter-spacing:-0.11px;">9:15 AM </span><span class="t v0 s5" style="left: 159px; bottom: 690px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Strength Lab (Push) - Rohan</span>
+<span class="t v0 s23" style="left:73px;bottom:689px;"><span>9:15</span><span>AM</span></span><span class="t v0 s5" style="left: 159px; bottom: 690px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (PUSH) - ROHAN</span>
 
 
-<span class="t v0 s23" style="left:73px;bottom:665px;letter-spacing:-0.09px;">10:00 AM </span><span class="t v0 s6" style="left: 159px; bottom: 665px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Simonelle</span>
+<span class="t v0 s23" style="left:73px;bottom:665px;"><span>10:00</span><span>AM</span></span><span class="t v0 s6" style="left: 159px; bottom: 665px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - SIMONELLE</span>
 
 
-<span class="t v0 s23" style="left:73px;bottom:640px;letter-spacing:-0.11px;">11:30 AM </span><span class="t v0 s5" style="left: 159px; bottom: 641px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Cardio Barre Plus - Rohan</span>
+<span class="t v0 s23" style="left:73px;bottom:640px;"><span>11:30</span><span>AM</span></span><span class="t v0 s5" style="left: 159px; bottom: 641px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">CARDIO BARRE PLUS - ROHAN</span>
 
 
-<span class="t v0 s23" style="left:73px;bottom:615px;letter-spacing:-0.11px;">5:45 PM </span><span class="t v0 s5" style="left: 159px; bottom: 616px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Mat 57 Express - Pranjali</span>
+<span class="t v0 s23" style="left:73px;bottom:615px;"><span>5:45</span><span>PM</span></span><span class="t v0 s5" style="left: 159px; bottom: 616px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">MAT 57 EXPRESS - PRANJALI</span>
 
 
-<span class="t v0 s23" style="left:73px;bottom:591px;letter-spacing:-0.11px;">6:00 PM </span><span class="t v0 s6" style="left: 159px; bottom: 591px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Anmol</span>
+<span class="t v0 s23" style="left:73px;bottom:591px;"><span>6:00</span><span>PM</span></span><span class="t v0 s6" style="left: 159px; bottom: 591px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - ANMOL</span>
 
 
-<span class="t v0 s23" style="left:73px;bottom:566px;letter-spacing:-0.11px;">6:00 PM </span><span class="t v0 s6" style="left: 159px; bottom: 567px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Fit - Atulan<span class="theme-badge" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 3px 8px; border-radius: 12px; font-size: 8px; font-weight: 700; margin-left: 8px; display: inline-block; vertical-align: middle; line-height: 1.3; box-shadow: 0 2px 6px rgba(0,0,0,0.4); letter-spacing: 0.1px; text-transform: uppercase; min-width: fit-content; max-width: 180px; text-align: center; white-space: normal; word-wrap: break-word; border: 1px solid rgba(255,255,255,0.2); position: relative; top: -1px">⚡️ TABATA</span></span>
+<span class="t v0 s23" style="left:73px;bottom:566px;"><span>6:00</span><span>PM</span></span><span class="t v0 s6" style="left: 159px; bottom: 567px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">FIT - ATULAN</span>
 
 
-<span class="t v0 s23" style="left:73px;bottom:542px;letter-spacing:-0.11px;">6:45 PM </span><span class="t v0 s6" style="left: 159px; bottom: 542px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Pranjali</span>
+<span class="t v0 s23" style="left:73px;bottom:542px;"><span>6:45</span><span>PM</span></span><span class="t v0 s6" style="left: 159px; bottom: 542px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - PRANJALI</span>
 
 
-<span class="t v0 s23" style="left:73px;bottom:517px;letter-spacing:-0.15px;">7:15 PM </span><span class="t v0 s5" style="left: 159px; bottom: 518px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Strength Lab (Pull) - Atulan</span>
+<span class="t v0 s23" style="left:73px;bottom:517px;"><span>7:15</span><span>PM</span></span><span class="t v0 s5" style="left: 159px; bottom: 518px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (PULL) - ATULAN</span>
 
 
-<span class="t v0 s23" style="left:73px;bottom:493px;letter-spacing:-0.11px;">7:30 PM </span><span class="t v0 s6" style="left: 159px; bottom: 493px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Anmol</span>
+<span class="t v0 s23" style="left:73px;bottom:493px;"><span>7:30</span><span>PM</span></span><span class="t v0 s6" style="left: 159px; bottom: 493px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - ANMOL</span>
 
 
 <!-- Tuesday -->
 <span class="t v0 s4" style="left:478px;bottom:824px;letter-spacing:-0.38px;">TUESDAY </span>
 
-<span class="t v0 s9" style="left:478px;bottom:787px;letter-spacing:-0.12px;">7:30 AM </span><span class="t v0 s5" style="left: 564px; bottom: 788px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Richard</span>
+<span class="t v0 s9" style="left:478px;bottom:787px;"><span>7:30</span><span>AM</span></span><span class="t v0 s5" style="left: 564px; bottom: 788px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - RICHARD</span>
 
 
-<span class="t v0 s9" style="left:478px;bottom:763px;letter-spacing:-0.12px;">7:30 AM </span><span class="t v0 s6" style="left: 564px; bottom: 763px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Fit - Pranjali<span class="theme-badge" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 3px 8px; border-radius: 12px; font-size: 8px; font-weight: 700; margin-left: 8px; display: inline-block; vertical-align: middle; line-height: 1.3; box-shadow: 0 2px 6px rgba(0,0,0,0.4); letter-spacing: 0.1px; text-transform: uppercase; min-width: fit-content; max-width: 180px; text-align: center; white-space: normal; word-wrap: break-word; border: 1px solid rgba(255,255,255,0.2); position: relative; top: -1px">⚡️ TABATA</span></span>
+<span class="t v0 s9" style="left:478px;bottom:763px;"><span>7:30</span><span>AM</span></span><span class="t v0 s6" style="left: 564px; bottom: 763px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">FIT - PRANJALI</span>
 
 
-<span class="t v0 s9" style="left:478px;bottom:738px;letter-spacing:-0.12px;">8:30 AM </span><span class="t v0 s5" style="left: 564px; bottom: 739px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Amped Up - Atulan<span class="theme-badge" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 3px 8px; border-radius: 12px; font-size: 8px; font-weight: 700; margin-left: 8px; display: inline-block; vertical-align: middle; line-height: 1.3; box-shadow: 0 2px 6px rgba(0,0,0,0.4); letter-spacing: 0.1px; text-transform: uppercase; min-width: fit-content; max-width: 180px; text-align: center; white-space: normal; word-wrap: break-word; border: 1px solid rgba(255,255,255,0.2); position: relative; top: -1px">⚡️ ICY ISOMETRIC</span></span>
+<span class="t v0 s9" style="left:478px;bottom:738px;"><span>8:30</span><span>AM</span></span><span class="t v0 s5" style="left: 564px; bottom: 739px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">AMPED UP! - ATULAN<span class="theme-badge" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 3px 8px 3px 6px; border-radius: 0 12px 12px 0; font-size: 8px; font-weight: 700; margin-left: 6px; display: inline-block; vertical-align: middle; line-height: 1.3; box-shadow: 0 2px 6px rgba(0,0,0,0.4); letter-spacing: 0.1px; text-transform: uppercase; min-width: fit-content; max-width: 180px; text-align: center; white-space: normal; word-wrap: break-word; border: 1px solid rgba(255,255,255,0.2); position: relative; top: -1px">⚡️ BAND LAND</span></span>
 
 
-<span class="t v0 s9" style="left:478px;bottom:714px;letter-spacing:-0.12px;">9:00 AM </span><span class="t v0 s6" style="left: 564px; bottom: 714px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Richard</span>
+<span class="t v0 s9" style="left:478px;bottom:714px;"><span>9:00</span><span>AM</span></span><span class="t v0 s6" style="left: 564px; bottom: 714px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - RICHARD</span>
 
 
-<span class="t v0 s9" style="left:478px;bottom:689px;letter-spacing:-0.12px;">9:00 AM </span><span class="t v0 s5" style="left: 564px; bottom: 690px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Strength Lab (Full Body) - Pranjali</span>
+<span class="t v0 s9" style="left:478px;bottom:689px;"><span>9:00</span><span>AM</span></span><span class="t v0 s5" style="left: 564px; bottom: 690px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (FULL BODY) - PRANJALI</span>
 
 
-<span class="t v0 s9" style="left:478px;bottom:665px;letter-spacing:-0.11px;">10:15 AM </span><span class="t v0 s5" style="left: 564px; bottom: 665px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Cardio Barre Express - Pranjali</span>
+<span class="t v0 s9" style="left:478px;bottom:665px;"><span>10:15</span><span>AM</span></span><span class="t v0 s5" style="left: 564px; bottom: 665px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">CARDIO BARRE EXPRESS - PRANJALI</span>
 
 
-<span class="t v0 s9" style="left:478px;bottom:640px;letter-spacing:-0.12px;">10:30 AM </span><span class="t v0 s6" style="left: 564px; bottom: 641px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Richard</span>
+<span class="t v0 s9" style="left:478px;bottom:640px;"><span>10:30</span><span>AM</span></span><span class="t v0 s6" style="left: 564px; bottom: 641px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - RICHARD</span>
 
 
-<span class="t v0 s9" style="left:478px;bottom:615px;letter-spacing:-0.11px;">11:00 AM </span><span class="t v0 s6" style="left: 564px; bottom: 616px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Mat 57 - Atulan</span>
+<span class="t v0 s9" style="left:478px;bottom:615px;"><span>11:00</span><span>AM</span></span><span class="t v0 s6" style="left: 564px; bottom: 616px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">MAT 57 - ATULAN</span>
 
 
-<span class="t v0 s9" style="left:478px;bottom:591px;letter-spacing:-0.12px;">5:45 PM </span><span class="t v0 s6" style="left: 564px; bottom: 591px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Rohan</span>
+<span class="t v0 s9" style="left:478px;bottom:591px;"><span>5:45</span><span>PM</span></span><span class="t v0 s6" style="left: 564px; bottom: 591px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - ROHAN</span>
 
 
-<span class="t v0 s9" style="left:478px;bottom:566px;letter-spacing:-0.12px;">6:00 PM </span><span class="t v0 s5" style="left: 564px; bottom: 567px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Strength Lab (Pull) - Anisha</span>
+<span class="t v0 s9" style="left:478px;bottom:566px;letter-spacing:-0.12px;">6:00 PM </span><span class="t v0 s5" style="left: 564px; bottom: 567px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (PULL) - ANISHA</span>
 
 
-<span class="t v0 s9" style="left:478px;bottom:542px;letter-spacing:-0.12px;">6:00 PM </span><span class="t v0 s6" style="left: 564px; bottom: 542px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Anmol</span>
+<span class="t v0 s9" style="left:478px;bottom:542px;letter-spacing:-0.12px;">6:00 PM </span><span class="t v0 s6" style="left: 564px; bottom: 542px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - ANMOL</span>
 
 
-<span class="t v0 s9" style="left:478px;bottom:517px;letter-spacing:-0.11px;">7:15 PM </span><span class="t v0 s6" style="left: 564px; bottom: 518px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Rohan</span>
+<span class="t v0 s9" style="left:478px;bottom:517px;letter-spacing:-0.11px;">7:15 PM </span><span class="t v0 s6" style="left: 564px; bottom: 518px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - ROHAN</span>
 
 
-<span class="t v0 s9" style="left:478px;bottom:493px;letter-spacing:-0.11px;">7:15 PM </span><span class="t v0 s6" style="left: 564px; bottom: 493px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Fit - Anisha<span class="theme-badge" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 3px 8px; border-radius: 12px; font-size: 8px; font-weight: 700; margin-left: 8px; display: inline-block; vertical-align: middle; line-height: 1.3; box-shadow: 0 2px 6px rgba(0,0,0,0.4); letter-spacing: 0.1px; text-transform: uppercase; min-width: fit-content; max-width: 180px; text-align: center; white-space: normal; word-wrap: break-word; border: 1px solid rgba(255,255,255,0.2); position: relative; top: -1px">⚡️ TABATA</span></span>
+<span class="t v0 s9" style="left:478px;bottom:493px;letter-spacing:-0.11px;">7:15 PM </span><span class="t v0 s6" style="left: 564px; bottom: 493px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">FIT - ANISHA</span>
 
 
 <!-- Wednesday -->
 <span class="t v0 s4" style="left:73px;bottom:421px;letter-spacing:-0.13px;">WEDNESDAY </span>
 
-<span class="t v0 s9" style="left:73px;bottom:390px;letter-spacing:-0.12px;">7:30 AM </span><span class="t v0 s6" style="left: 159px; bottom: 391px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Simonelle</span>
+<span class="t v0 s9" style="left:73px;bottom:390px;letter-spacing:-0.12px;">7:30 AM </span><span class="t v0 s6" style="left: 159px; bottom: 391px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">CARDIO BARRE - ANISHA</span>
 
 
-<span class="t v0 s9" style="left:73px;bottom:366px;letter-spacing:-0.12px;">7:30 AM </span><span class="t v0 s5" style="left: 159px; bottom: 366px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Simonelle</span>
+<span class="t v0 s9" style="left:73px;bottom:366px;letter-spacing:-0.12px;">7:30 AM </span><span class="t v0 s5" style="left: 159px; bottom: 366px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (PUSH) - ATULAN</span>
 
 
-<span class="t v0 s9" style="left:73px;bottom:341px;letter-spacing:-0.12px;">8:00 AM </span><span class="t v0 s6" style="left: 159px; bottom: 342px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Rohan</span>
+<span class="t v0 s9" style="left:73px;bottom:341px;letter-spacing:-0.12px;">8:00 AM </span><span class="t v0 s6" style="left: 159px; bottom: 342px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - KARAN</span>
 
 
-<span class="t v0 s9" style="left:73px;bottom:317px;letter-spacing:-0.12px;">8:45 AM </span><span class="t v0 s5" style="left: 159px; bottom: 317px; letter-spacing: -0.1px; font-family: Montserrat-Medium_1-, sans-serif; font-weight: 70;">Strength Lab (Pull) - Atulan</span>
+<span class="t v0 s9" style="left:73px;bottom:317px;letter-spacing:-0.12px;">8:45 AM </span><span class="t v0 s5" style="left: 159px; bottom: 317px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (PULL) - ATULAN</span>
 
 
-<span class="t v0 s9" style="left:73px;bottom:292px;letter-spacing:-0.12px;">9:00 AM </span>
-<span class="t v0 s5" style="left:159px;bottom:293px;letter-spacing:0.21px;">BACK BODY BLAZE </span><span class="t v0 s6" style="left:296px;bottom:293px;letter-spacing:0.17px;">- Anisha </span>
-
-<span class="t v0 s9" style="left:73px;bottom:267px;letter-spacing:-0.11px;">9:15 AM </span><span class="t v0 s6" style="left: 159px; bottom: 268px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Strength Lab (Push) - Rohan</span>
+<span class="t v0 s9" style="left:73px;bottom:292px;letter-spacing:-0.12px;">9:00 AM </span><span class="t v0 s5" style="left: 159px; bottom: 293px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BACK BODY BLAZE - ANISHA</span>
 
 
-<span class="t v0 s9" style="left:73px;bottom:243px;letter-spacing:-0.11px;">10:15 AM </span>
-<span class="t v0 s6" style="left:159px;bottom:243px;letter-spacing:0.19px;">CARDIO BARRE - Atulan </span>
+<span class="t v0 s9" style="left:73px;bottom:267px;letter-spacing:-0.11px;">9:15 AM </span><span class="t v0 s6" style="left: 159px; bottom: 268px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - KARAN</span>
+
+
+<span class="t v0 s9" style="left:73px;bottom:243px;letter-spacing:-0.11px;">10:15 AM </span><span class="t v0 s6" style="left: 159px; bottom: 243px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">CARDIO BARRE - ATULAN</span>
+
 
 <span class="t v0 s9" style="left:73px;bottom:218px;letter-spacing:-0.11px;">11:00 AM </span>
 <span class="t v0 s6" style="left:159px;bottom:219px;letter-spacing:0.19px;">powerCycle - Anmol </span>
 
-<span class="t v0 s9" style="left:73px;bottom:194px;letter-spacing:-0.11px;">11:30 AM </span><span class="t v0 s6" style="left: 159px; bottom: 194px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Cardio Barre Plus - Rohan</span>
+<span class="t v0 s9" style="left:73px;bottom:194px;letter-spacing:-0.11px;">11:30 AM </span><span class="t v0 s6" style="left: 159px; bottom: 194px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - KARAN</span>
 
 
-<span class="t v0 s9" style="left:73px;bottom:169px;letter-spacing:-0.12px;">5:45 PM </span><span class="t v0 s6" style="left: 159px; bottom: 170px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Mat 57 Express - Pranjali</span>
+<span class="t v0 s9" style="left:73px;bottom:169px;letter-spacing:-0.12px;">5:45 PM </span><span class="t v0 s6" style="left: 159px; bottom: 170px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - SIMRAN</span>
 
 
-<span class="t v0 s9" style="left:73px;bottom:145px;letter-spacing:-0.12px;">6:00 PM </span><span class="t v0 s6" style="left: 159px; bottom: 145px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Anmol</span>
+<span class="t v0 s9" style="left:73px;bottom:145px;letter-spacing:-0.12px;">6:00 PM </span><span class="t v0 s6" style="left: 159px; bottom: 145px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (PUSH) - VIVARAN</span>
 
 
-<span class="t v0 s9" style="left:73px;bottom:120px;letter-spacing:-0.11px;">6:15 PM </span><span class="t v0 s8" style="left: 159px; bottom: 121px; letter-spacing: -0.1px; font-family: Montserrat-Medium_1-, sans-serif; font-weight: 70;">Cardio Barre Express - Pranjali</span>
+<span class="t v0 s9" style="left:73px;bottom:120px;letter-spacing:-0.11px;">6:15 PM </span><span class="t v0 s8" style="left: 159px; bottom: 121px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">CARDIO BARRE EXPRESS - PRANJALI</span>
 
 
-<span class="t v0 s9" style="left:73px;bottom:96px;letter-spacing:-0.12px;">7:00 PM </span><span class="t v0 s6" style="left: 159px; bottom: 96px; letter-spacing: -0.1px; font-family: Montserrat-Medium_1-, sans-serif; font-weight: 70;">Barre 57 - Simran</span>
+<span class="t v0 s9" style="left:73px;bottom:96px;letter-spacing:-0.12px;">7:00 PM </span><span class="t v0 s6" style="left: 159px; bottom: 96px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - SIMRAN</span>
 
 
-<span class="t v0 s9" style="left:73px;bottom:71px;letter-spacing:-0.11px;">7:15 PM </span><span class="t v0 s6" style="left: 159px; bottom: 71px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Strength Lab (Pull) - Atulan</span>
+<span class="t v0 s9" style="left:73px;bottom:71px;letter-spacing:-0.11px;">7:15 PM </span><span class="t v0 s6" style="left: 159px; bottom: 71px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">MAT 57 - PRANJALI</span>
 
 
-<span class="t v0 s9" style="left:73px;bottom:46px;letter-spacing:-0.12px;">7:30 PM </span><span class="t v0 s5" style="left: 159px; bottom: 47px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Anmol</span>
+<span class="t v0 s9" style="left:73px;bottom:46px;letter-spacing:-0.12px;">7:30 PM </span><span class="t v0 s5" style="left: 159px; bottom: 47px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - VIVARAN</span>
 
 
 <span class style="left:755px;bottom:746px;letter-spacing:0.12px;">STATIC MAGIC </span>
@@ -335,43 +383,43 @@ INTERMEDIATE • CARDIO BARRE • MAT 57 • INTERMEDIATE • CARDIO BARRE • M
 <!-- Thursday -->
 <span class="t v0 s4" style="left:478px;bottom:421px;letter-spacing:-0.3px;">THURSDAY </span>
 
-<span class="t v0 s9" style="left:479px;bottom:384px;letter-spacing:-0.11px;">7:15 AM </span>
-<span class="t v0 s5" style="left:565px;bottom:385px;letter-spacing:0.21px;">STRENGTH LAB (PUSH) </span><span class="t v0 s6" style="left:728px;bottom:385px;letter-spacing:0.17px;">- Richard </span>
-
-<span class="t v0 s9" style="left:479px;bottom:360px;letter-spacing:-0.12px;">7:30 AM </span><span class="t v0 s6" style="left: 565px; bottom: 357px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Richard</span>
+<span class="t v0 s9" style="left:479px;bottom:384px;letter-spacing:-0.11px;">7:15 AM </span><span class="t v0 s5" style="left: 565px; bottom: 385px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (PUSH) - RICHARD</span>
 
 
-<span class="t v0 s9" style="left:479px;bottom:335px;letter-spacing:-0.12px;">8:00 AM </span>
-<span class="t v0 s6" style="left:565px;bottom:332px;letter-spacing:0.17px;">powerCycle - </span><span class="t sa" style="left:658px;bottom:332px;letter-spacing:-0.14px;">Vivaran </span>
-
-<span class="t v0 s9" style="left:479px;bottom:310px;letter-spacing:-0.12px;">9:00 AM </span><span class="t v0 s5" style="left: 565px; bottom: 308px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Richard</span>
+<span class="t v0 s9" style="left:479px;bottom:360px;letter-spacing:-0.12px;">7:30 AM </span><span class="t v0 s6" style="left: 565px; bottom: 357px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">MAT 57 EXPRESS - PRANJALI</span>
 
 
-<span class="t v0 s9" style="left:479px;bottom:286px;letter-spacing:-0.12px;">9:00 AM </span><span class="t v0 s6" style="left: 565px; bottom: 283px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Richard</span>
+<span class="t v0 s9" style="left:479px;bottom:335px;letter-spacing:-0.12px;">8:00 AM </span><span class="t v0 s6" style="left: 565px; bottom: 332px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - BRET</span>
 
 
-<span class="t v0 s9" style="left:479px;bottom:261px;letter-spacing:-0.12px;">9:30 AM </span><span class="t v0 s6" style="left: 565px; bottom: 259px; letter-spacing: -0.1px; font-family: Montserrat-Medium_1-, sans-serif; font-weight: 70;">PowerCycle - Vivaran</span>
+<span class="t v0 s9" style="left:479px;bottom:310px;letter-spacing:-0.12px;">9:00 AM </span><span class="t v0 s5" style="left: 565px; bottom: 308px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - RICHARD</span>
 
 
-<span class="t v0 s9" style="left:479px;bottom:237px;letter-spacing:-0.11px;">10:15 AM </span><span class="t v0 s6" style="left: 565px; bottom: 234px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Cardio Barre Express - Pranjali</span>
+<span class="t v0 s9" style="left:479px;bottom:286px;letter-spacing:-0.12px;">9:00 AM </span><span class="t v0 s6" style="left: 565px; bottom: 283px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (PULL) - PRANJALI</span>
 
 
-<span class="t v0 s9" style="left:479px;bottom:212px;letter-spacing:-0.11px;">11:00 AM </span><span class="t v0 s6" style="left: 565px; bottom: 210px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Mat 57 - Atulan</span>
+<span class="t v0 s9" style="left:479px;bottom:261px;letter-spacing:-0.12px;">9:30 AM </span><span class="t v0 s6" style="left: 565px; bottom: 259px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - BRET</span>
 
 
-<span class="t v0 s9" style="left:479px;bottom:188px;letter-spacing:-0.12px;">5:45 PM </span><span class="t v0 s6" style="left: 565px; bottom: 185px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Rohan</span>
+<span class="t v0 s9" style="left:479px;bottom:237px;letter-spacing:-0.11px;">10:15 AM </span><span class="t v0 s6" style="left: 565px; bottom: 234px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">CARDIO BARRE - RICHARD</span>
 
 
-<span class="t v0 s9" style="left:479px;bottom:163px;letter-spacing:-0.11px;">6:15 PM </span>
-<span class="t v0 s5" style="left:565px;bottom:161px;letter-spacing:0.21px;">BACK BODY BLAZE (EXPRESS) </span><span class="t v0 s6" style="left:779px;bottom:161px;letter-spacing:0.2px;">- Reshma </span>
-
-<span class="t v0 s9" style="left:479px;bottom:138px;letter-spacing:-0.11px;">7:15 PM </span><span class="t v0 s5" style="left: 565px; bottom: 136px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Rohan</span>
+<span class="t v0 s9" style="left:479px;bottom:212px;letter-spacing:-0.11px;">11:00 AM </span><span class="t v0 s6" style="left: 565px; bottom: 210px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">FIT - PRANJALI</span>
 
 
-<span class="t v0 s9" style="left:479px;bottom:114px;letter-spacing:-0.11px;">7:15 PM </span><span class="t v0 s6" style="left: 565px; bottom: 111px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Rohan</span>
+<span class="t v0 s9" style="left:479px;bottom:188px;letter-spacing:-0.12px;">5:45 PM </span><span class="t v0 s6" style="left: 565px; bottom: 185px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - RAUNAK</span>
 
 
-<span class="t v0 s9" style="left:479px;bottom:89px;letter-spacing:-0.11px;">7:15 PM </span><span class="t v0 s6" style="left: 565px; bottom: 87px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Rohan</span>
+<span class="t v0 s9" style="left:479px;bottom:163px;letter-spacing:-0.11px;">6:15 PM </span><span class="t v0 s5" style="left: 565px; bottom: 161px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BACK BODY BLAZE EXPRESS - ATULAN</span>
+
+
+<span class="t v0 s9" style="left:479px;bottom:138px;letter-spacing:-0.11px;">7:15 PM </span><span class="t v0 s5" style="left: 565px; bottom: 136px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - RAUNAK</span>
+
+
+<span class="t v0 s9" style="left:479px;bottom:114px;letter-spacing:-0.11px;">7:15 PM </span><span class="t v0 s6" style="left: 565px; bottom: 111px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (PUSH) - ATULAN</span>
+
+
+<span class="t v0 s9" style="left:479px;bottom:89px;letter-spacing:-0.11px;">7:15 PM </span><span class="t v0 s6" style="left: 565px; bottom: 87px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - SIMRAN</span>
 
 
 <span class="t sb" style="left:71px;bottom:947px;letter-spacing:-0.1px;">BEGINNER : FOUNDATIONS, BARRE 57, SWEAT IN 30 </span>
@@ -405,83 +453,83 @@ INTERMEDIATE • CARDIO BARRE • MAT 57 • INTERMEDIATE • CARDIO BARRE • M
 
 <span class="t s4" style="left:76px;bottom:772px;letter-spacing:-0.64px;">FRIDAY </span>
 
-<span class="t s9" style="left:76px;bottom:736px;letter-spacing:-0.13px;">7:30 AM </span><span class="t v0 s5" style="left: 161px; bottom: 736px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Simonelle</span>
+<span class="t s9" style="left:76px;bottom:736px;letter-spacing:-0.13px;">7:30 AM </span><span class="t v0 s5" style="left: 161px; bottom: 736px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BACK BODY BLAZE EXPRESS - RICHARD</span>
 
 
-<span class="t s9" style="left:76px;bottom:708px;letter-spacing:-0.13px;">8:30 AM </span><span class="t v0 s6" style="left: 161px; bottom: 708px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Mat 57 - Anisha</span>
+<span class="t s9" style="left:76px;bottom:708px;letter-spacing:-0.13px;">8:30 AM </span><span class="t v0 s6" style="left: 161px; bottom: 708px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - BRET</span>
 
 
-<span class="t s9" style="left:76px;bottom:681px;letter-spacing:-0.15px;">8:30 AM </span><span class="t v0 s6" style="left: 161px; bottom: 681px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Mat 57 - Anisha</span>
+<span class="t s9" style="left:76px;bottom:681px;letter-spacing:-0.15px;">8:30 AM </span><span class="t v0 s6" style="left: 161px; bottom: 681px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - SIMRAN</span>
 
 
-<span class="t s9" style="left:76px;bottom:653px;letter-spacing:-0.13px;">9:00 AM </span>
-<span class="t v0 s6" style="left:161px;bottom:653px;letter-spacing:0.12px;">FIT - </span><span class="t sa" style="left:194px;bottom:653px;letter-spacing:-0.17px;">Rohan </span>
-
-<span class="t s9" style="left:76px;bottom:626px;letter-spacing:-0.15px;">10:00 AM </span><span class="t v0 s6" style="left: 161px; bottom: 625px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Simonelle</span>
+<span class="t s9" style="left:76px;bottom:653px;letter-spacing:-0.13px;">9:00 AM </span><span class="t v0 s6" style="left: 161px; bottom: 653px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">FIT - RICHARD</span>
 
 
-<span class="t s9" style="left:76px;bottom:598px;letter-spacing:-0.14px;">11:00 AM </span>
-<span class="t v0 s5" style="left:161px;bottom:598px;letter-spacing:0.2px;">STRENGTH LAB (FULL BODY) </span><span class="t v0 s6" style="left:365px;bottom:598px;">- </span><span class="t sa" style="left:377px;bottom:598px;letter-spacing:-0.17px;">Rohan </span>
-
-<span class="t s9" style="left:76px;bottom:571px;letter-spacing:-0.13px;">11:15 AM </span><span class="t v0 s6" style="left: 161px; bottom: 570px; letter-spacing: -0.1px; font-family: Montserrat-Medium_1-, sans-serif; font-weight: 70;">Cardio Barre - Richard</span>
+<span class="t s9" style="left:76px;bottom:626px;letter-spacing:-0.15px;">10:00 AM </span><span class="t v0 s6" style="left: 161px; bottom: 625px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - BRET</span>
 
 
-<span class="t s9" style="left:76px;bottom:543px;letter-spacing:-0.12px;">5:45 PM </span><span class="t v0 s6" style="left: 161px; bottom: 543px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Mat 57 Express - Pranjali</span>
+<span class="t s9" style="left:76px;bottom:598px;letter-spacing:-0.14px;">11:00 AM </span><span class="t v0 s5" style="left: 161px; bottom: 598px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (FULL BODY) - RICHARD</span>
+<span class="t v0 s6" style="left:365px;bottom:598px;">- </span>
+
+<span class="t s9" style="left:76px;bottom:571px;letter-spacing:-0.13px;">11:15 AM </span><span class="t v0 s6" style="left: 161px; bottom: 570px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">CARDIO BARRE - SIMRAN</span>
 
 
-<span class="t s9" style="left:76px;bottom:515px;letter-spacing:-0.13px;">6:00 PM </span><span class="t v0 s5" style="left: 161px; bottom: 515px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">PowerCycle - Anmol</span>
+<span class="t s9" style="left:76px;bottom:543px;letter-spacing:-0.12px;">5:45 PM </span><span class="t v0 s6" style="left: 161px; bottom: 543px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - SIMONELLE</span>
 
 
-<span class="t s9" style="left:76px;bottom:488px;letter-spacing:-0.13px;">7:00 PM </span>
-<span class="t v0 s8" style="left:161px;bottom:487px;letter-spacing:0.19px;">CARDIO BARRE PLUS - Pranjali </span>
+<span class="t s9" style="left:76px;bottom:515px;letter-spacing:-0.13px;">6:00 PM </span><span class="t v0 s5" style="left: 161px; bottom: 515px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (FULL BODY) - ANISHA</span>
 
-<span class="t s9" style="left:76px;bottom:460px;letter-spacing:-0.12px;">7:15 PM </span><span class="t v0 s6" style="left: 161px; bottom: 460px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Strength Lab (Pull) - Atulan</span>
+
+<span class="t s9" style="left:76px;bottom:488px;letter-spacing:-0.13px;">7:00 PM </span><span class="t v0 s8" style="left: 161px; bottom: 487px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">CARDIO BARRE PLUS - ANISHA</span>
+
+
+<span class="t s9" style="left:76px;bottom:460px;letter-spacing:-0.12px;">7:15 PM </span><span class="t v0 s6" style="left: 161px; bottom: 460px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle Express - ANMOL</span>
 
 
 <!-- SATURDAY Schedule -->
 
 <span class="t s4" style="left:481px;bottom:772px;letter-spacing:-0.83px;">SATURDAY </span>
 
-<span class="t s9" style="left:483px;bottom:735px;letter-spacing:-0.13px;">8:00 AM </span>
-<span class="t v0 s5" style="left:556px;bottom:736px;letter-spacing:0.21px;">CARDIO BARRE EXPRESS </span><span class="t v0 s6" style="left:734px;bottom:736px;">- </span><span class="t v0 sg" style="left:743px;bottom:736px;letter-spacing:0.18px;">Karanvir </span>
+<span class="t s9" style="left:483px;bottom:735px;letter-spacing:-0.13px;">8:00 AM </span><span class="t v0 s5" style="left: 556px; bottom: 736px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">CARDIO BARRE EXPRESS - CAUVERI</span>
+<span class="t v0 s6" style="left:734px;bottom:736px;">- </span>
 
-<span class="t s9" style="left:483px;bottom:708px;letter-spacing:-0.15px;">9:00 AM </span><span class="t v0 s6" style="left: 556px; bottom: 708px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Richard</span>
-
-
-<span class="t s9" style="left:483px;bottom:680px;letter-spacing:-0.13px;">9:00 AM </span><span class="t v0 s5" style="left: 556px; bottom: 680px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Richard</span>
+<span class="t s9" style="left:483px;bottom:708px;letter-spacing:-0.15px;">9:00 AM </span><span class="t v0 s6" style="left: 556px; bottom: 708px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (PUSH) - ANISHA</span>
 
 
-<span class="t s9" style="left:483px;bottom:653px;letter-spacing:-0.15px;">10:00 AM </span>
-<span class="t v0 s6" style="left:556px;bottom:653px;letter-spacing:0.17px;">powerCycle - </span><span class="t v0 sg" style="left:649px;bottom:653px;letter-spacing:0.18px;">Karanvir </span>
-
-<span class="t s9" style="left:483px;bottom:625px;letter-spacing:-0.12px;">10:15 AM </span><span class="t v0 s6" style="left: 556px; bottom: 625px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Cardio Barre Express - Pranjali</span>
+<span class="t s9" style="left:483px;bottom:680px;letter-spacing:-0.13px;">9:00 AM </span><span class="t v0 s5" style="left: 556px; bottom: 680px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - RICHARD</span>
 
 
-<span class="t s9" style="left:483px;bottom:598px;letter-spacing:-0.12px;">10:15 AM </span>
-<span class="t v0 s6" style="left:556px;bottom:598px;letter-spacing:0.17px;">BARRE 57 - </span><span class="t v0 s6" style="left:640px;bottom:598px;letter-spacing:0.23px;">Reshma </span>
+<span class="t s9" style="left:483px;bottom:653px;letter-spacing:-0.15px;">10:00 AM </span><span class="t v0 s6" style="left: 556px; bottom: 653px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - CAUVERI</span>
 
-<span class="t s9" style="left:483px;bottom:570px;letter-spacing:-0.14px;">11:30 AM </span>
-<span class="t v0 s6" style="left:556px;bottom:570px;letter-spacing:0.18px;">powerCycle - Karanvir </span>
 
-<span class="t s9" style="left:483px;bottom:542px;letter-spacing:-0.12px;">11:30 AM </span>
-<span class="t v0 s6" style="left:556px;bottom:542px;letter-spacing:0.21px;">BARRE 57 </span><span class="t v0 s8" style="left:628px;bottom:542px;letter-spacing:0.15px;">- Pranjali </span>
+<span class="t s9" style="left:483px;bottom:625px;letter-spacing:-0.12px;">10:15 AM </span><span class="t v0 s6" style="left: 556px; bottom: 625px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">MAT 57 - PRANJALI</span>
 
-<span class="t s9" style="left:483px;bottom:515px;letter-spacing:-0.14px;">11:30 AM </span>
-<span class="t v0 s5" style="left:556px;bottom:515px;letter-spacing:0.21px;">STRENGTH LAB (PUSH) </span><span class="t v0 s6" style="left:719px;bottom:515px;letter-spacing:0.2px;">- Reshma </span>
+
+<span class="t s9" style="left:483px;bottom:598px;letter-spacing:-0.12px;">10:15 AM </span><span class="t v0 s6" style="left: 556px; bottom: 598px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - ANISHA</span>
+
+
+<span class="t s9" style="left:483px;bottom:570px;letter-spacing:-0.14px;">11:30 AM </span><span class="t v0 s6" style="left: 556px; bottom: 570px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - CAUVERI</span>
+
+
+<span class="t s9" style="left:483px;bottom:542px;letter-spacing:-0.12px;">11:30 AM </span><span class="t v0 s6" style="left: 556px; bottom: 542px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (PUSH) - ANISHA</span>
+
+
+<span class="t s9" style="left:483px;bottom:515px;letter-spacing:-0.14px;">11:30 AM </span><span class="t v0 s5 sold-out" style="left: 556px; bottom: 515px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - PRANJALI <span class="sold-out-badge">SOLD OUT</span></span>
+
 
 <span class="t s9" style="left:483px;bottom:487px;letter-spacing:-0.12px;">12:30 PM </span>
 <span class="t v0 sh" style="left:556px;bottom:487px;letter-spacing:0.18px;">RECOVERY - Pranjali </span>
 
-<span class="t s9" style="left:483px;bottom:460px;letter-spacing:-0.13px;">4:30 PM </span><span class="t v0 s5" style="left: 556px; bottom: 460px; letter-spacing: -0.1px; font-family: Montserrat-Medium_1-, sans-serif; font-weight: 70;">Cardio Barre Express - Simran</span>
+<span class="t s9" style="left:483px;bottom:460px;letter-spacing:-0.13px;">4:30 PM </span><span class="t v0 s5" style="left: 556px; bottom: 460px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">CARDIO BARRE EXPRESS - SIMRAN</span>
 
 
-<span class="t s9" style="left:483px;bottom:432px;letter-spacing:-0.13px;">5:00 PM </span><span class="t v0 s5" style="left: 556px; bottom: 432px; letter-spacing: -0.1px; font-family: Montserrat-Medium_1-, sans-serif; font-weight: 70;">Strength Lab (Full Body) - Richard</span>
+<span class="t s9" style="left:483px;bottom:432px;letter-spacing:-0.13px;">5:00 PM </span><span class="t v0 s5" style="left: 556px; bottom: 432px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (FULL BODY) - RICHARD</span>
 
 
-<span class="t s9" style="left:483px;bottom:405px;letter-spacing:-0.13px;">5:30 PM </span><span class="t v0 s6" style="left: 556px; bottom: 404px; letter-spacing: -0.1px; font-family: Montserrat-Medium_1-, sans-serif; font-weight: 70;">Barre 57 - Simran</span>
+<span class="t s9" style="left:483px;bottom:405px;letter-spacing:-0.13px;">5:30 PM </span><span class="t v0 s6" style="left: 556px; bottom: 404px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - SIMRAN</span>
 
 
-<span class="t s9" style="left:483px;bottom:377px;letter-spacing:-0.13px;">6:30 PM </span><span class="t v0 s6" style="left: 556px; bottom: 377px; letter-spacing: -0.1px; font-family: Montserrat-Medium_1-, sans-serif; font-weight: 70;">PowerCycle - Richard</span>
+<span class="t s9" style="left:483px;bottom:377px;letter-spacing:-0.13px;">6:30 PM </span><span class="t v0 s6" style="left: 556px; bottom: 377px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - RICHARD</span>
 
 
 <!-- Floating element from the original input
@@ -501,28 +549,28 @@ INTERMEDIATE • CARDIO BARRE • MAT 57 • INTERMEDIATE • CARDIO BARRE • M
 
 <span class="t s4" style="left:76px;bottom:369px;letter-spacing:-0.6px;">SUNDAY </span>
 
-<span class="t s9" style="left:78px;bottom:332px;letter-spacing:-0.13px;">10:00 AM </span><span class="t v0 s7" style="left: 163px; bottom: 332px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Simonelle</span>
+<span class="t s9" style="left:78px;bottom:332px;letter-spacing:-0.13px;">10:00 AM </span><span class="t v0 s7" style="left: 163px; bottom: 332px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">STRENGTH LAB (FULL BODY) - RICHARD</span>
 
 
-<span class="t s9" style="left:78px;bottom:304px;letter-spacing:-0.13px;">10:00 AM </span><span class="t v0 sa" style="left: 163px; bottom: 305px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Barre 57 - Simonelle</span>
+<span class="t s9" style="left:78px;bottom:304px;letter-spacing:-0.13px;">10:00 AM </span><span class="t v0 sa" style="left: 163px; bottom: 305px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - RAUNAK</span>
 
 
-<span class="t s9" style="left:78px;bottom:276px;letter-spacing:-0.14px;">10:15 AM </span>
-<span class="t v0 s7" style="left:163px;bottom:277px;letter-spacing:-0.12px;">CARDIO BARRE - </span><span class="t v0 sa" style="left:287px;bottom:277px;letter-spacing:-0.11px;">Cauveri </span>
-
-<span class="t s9" style="left:78px;bottom:249px;letter-spacing:-0.12px;">11:30 AM </span><span class="t v0 sa" style="left: 163px; bottom: 249px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Cardio Barre Plus - Rohan</span>
+<span class="t s9" style="left:78px;bottom:276px;letter-spacing:-0.14px;">10:15 AM </span><span class="t v0 s7" style="left: 163px; bottom: 277px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">CARDIO BARRE - CAUVERI</span>
 
 
-<span class="t s9" style="left:78px;bottom:221px;letter-spacing:-0.14px;">11:30 AM </span><span class="t v0 s7" style="left: 163px; bottom: 222px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 600; color: #1a1a1a; font-style: normal; text-transform: none;">Cardio Barre Plus - Rohan</span>
+<span class="t s9" style="left:78px;bottom:249px;letter-spacing:-0.12px;">11:30 AM </span><span class="t v0 sa" style="left: 163px; bottom: 249px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">powerCycle - CAUVERI</span>
 
 
-<span class="t s9" style="left:78px;bottom:194px;letter-spacing:-0.13px;">4:00 PM </span><span class="t v0 s7" style="left: 163px; bottom: 194px; letter-spacing: -0.1px; font-family: Montserrat-Medium_1-, sans-serif; font-weight: 70;">Barre 57 - Simran</span>
+<span class="t s9" style="left:78px;bottom:221px;letter-spacing:-0.14px;">11:30 AM </span><span class="t v0 s7" style="left: 163px; bottom: 222px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - RICHARD</span>
+
+
+<span class="t s9" style="left:78px;bottom:194px;letter-spacing:-0.13px;">4:00 PM </span><span class="t v0 s7" style="left: 163px; bottom: 194px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">BARRE 57 - SIMRAN</span>
 
 
 <span class="t s9" style="left:78px;bottom:166px;letter-spacing:-0.14px;">5:00PM </span>
 <span class="t v0 sf" style="left:163px;bottom:166px;letter-spacing:-0.11px;">Powercycle - Anmol </span>
 
-<span class="t s9" style="left:78px;bottom:139px;letter-spacing:-0.14px;">5:15 PM </span><span class="t v0 sa" style="left: 163px; bottom: 139px; letter-spacing: -0.1px; font-family: Montserrat-Medium_1-, sans-serif; font-weight: 70;">Mat 57 - Simran</span>
+<span class="t s9" style="left:78px;bottom:139px;letter-spacing:-0.14px;">5:15 PM </span><span class="t v0 sa" style="left: 163px; bottom: 139px; letter-spacing: -0.1px; font-family: Montserrat, sans-serif; font-weight: 400; color: #1a1a1a; font-style: normal; text-transform: none;">MAT 57 - SIMRAN</span>
 
 </div>
 

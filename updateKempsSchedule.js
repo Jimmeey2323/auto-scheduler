@@ -112,6 +112,29 @@ class ScheduleUpdater {
     }
 
     /**
+     * Format class name with proper casing:
+     * - PowerCycle displays as 'powerCycle'
+     * - All other classes display in UPPERCASE
+     */
+    formatClassName(className) {
+        if (!className) return '';
+        const lower = className.toLowerCase().trim();
+        
+        // PowerCycle special case - display as 'powerCycle'
+        if (lower.includes('powercycle')) {
+            let formatted = lower.replace(/powercycle/g, 'powerCycle');
+            // Handle Express suffix
+            formatted = formatted.replace(/express/g, 'Express');
+            // Capitalize 'Studio' if present
+            formatted = formatted.replace(/^studio\s+/i, 'STUDIO ');
+            return formatted;
+        }
+        
+        // All other classes in UPPERCASE
+        return className.toUpperCase();
+    }
+
+    /**
      * Read schedule data from Google Sheets ("Cleaned" tab)
      */
     async readSheet() {
@@ -217,15 +240,32 @@ class ScheduleUpdater {
                     return obj;
                 });
 
-            // Filter only Kwality House, Kemps Corner classes for Kemps HTML
-            this.kwalityClasses = records.filter(record =>
-                record.Location && record.Location.includes('Kwality House')
-            );
+            // Filter classes based on current location
+            let filteredClasses;
+            if (this.currentLocation === 'kemps') {
+                filteredClasses = records.filter(record =>
+                    record.Location && record.Location.includes('Kwality House')
+                );
+                console.log(`✅ Found ${filteredClasses.length} classes for Kwality House from Cleaned sheet`);
+            } else if (this.currentLocation === 'bandra') {
+                filteredClasses = records.filter(record =>
+                    record.Location && /Supreme HQ.*Bandra|Supreme HQ,\s*Bandra/i.test(record.Location)
+                );
+                console.log(`✅ Found ${filteredClasses.length} classes for Supreme HQ, Bandra from Cleaned sheet`);
+            } else {
+                // Default fallback
+                filteredClasses = records.filter(record =>
+                    record.Location && record.Location.includes('Kwality House')
+                );
+                console.log(`⚠️  Unknown location '${this.currentLocation}', defaulting to Kwality House. Found ${filteredClasses.length} classes`);
+            }
+            
+            // Assign filtered classes to instance variable
+            this.kwalityClasses = filteredClasses;
             
             // Store all records for other purposes
             this.allSheetRecords = records;
 
-            console.log(`✅ Found ${this.kwalityClasses.length} classes for Kwality House from Cleaned sheet`);
             console.log(`✅ Total ${records.length} classes in Cleaned sheet`);
             return this.kwalityClasses;
         } catch (error) {
@@ -274,15 +314,27 @@ class ScheduleUpdater {
 
             console.log(`✅ Retrieved ${scheduleData.length} schedule records from linked sheet`);
             
-            // Step 4: Parse email for covers and themes
+            // Step 4: Determine if this is first email (initial schedule) or subsequent email (changes)
             console.log('🎨 Step 4: Parsing email for covers and themes...');
-            const emailInfo = this.parseEmailForScheduleInfo(emailData.allMessages);
+            const isFirstEmail = this.hasSpreadsheetLink(emailData.body);
+            console.log(`📧 Email type: ${isFirstEmail ? 'FIRST EMAIL (using spreadsheet covers only)' : 'SUBSEQUENT EMAIL (using email body covers)'}`);
+            
+            const emailInfo = this.parseEmailForScheduleInfo(emailData.allMessages, isFirstEmail);
             
             console.log(`✅ Parsed ${emailInfo.covers.length} covers and ${emailInfo.themes.length} themes from email`);
+            
+            // Log covers from email body (only if subsequent email)
+            if (!isFirstEmail && emailInfo.covers.length > 0) {
+                console.log('\n📧 ===== COVERS FROM EMAIL BODY =====');
+                this.logEmailCovers(emailInfo.covers);
+                console.log('====================================\n');
+            } else if (isFirstEmail) {
+                console.log('\nℹ️  First email detected - using covers from spreadsheet only, ignoring email body covers\n');
+            }
 
             // Step 5: Update target spreadsheet with combined data
             console.log('📊 Step 5: Updating target spreadsheet...');
-            await this.updateTargetSpreadsheet(scheduleData, emailInfo);
+            await this.updateTargetSpreadsheet(scheduleData, emailInfo, isFirstEmail);
             
             console.log('✅ Email processing completed successfully');
             
@@ -442,23 +494,98 @@ class ScheduleUpdater {
      * Extract email body from Gmail message data
      */
     extractEmailBody(messageData) {
-        let body = '';
-        
-        if (messageData.payload.body && messageData.payload.body.data) {
-            body = Buffer.from(messageData.payload.body.data, 'base64').toString();
-        } else if (messageData.payload.parts) {
-            for (const part of messageData.payload.parts) {
-                if (part.mimeType === 'text/plain' && part.body.data) {
-                    body += Buffer.from(part.body.data, 'base64').toString();
-                } else if (part.mimeType === 'text/html' && part.body.data) {
-                    // Convert HTML to text (basic conversion)
-                    const htmlBody = Buffer.from(part.body.data, 'base64').toString();
-                    body += htmlBody.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
-                }
+        const collectedParts = [];
+
+        const normalizeBase64 = (data) => {
+            if (!data) return '';
+            const normalized = data.replace(/-/g, '+').replace(/_/g, '/');
+            const paddingNeeded = normalized.length % 4;
+            return paddingNeeded ? normalized + '='.repeat(4 - paddingNeeded) : normalized;
+        };
+
+        const decodePart = (data) => {
+            if (!data) return '';
+            try {
+                return Buffer.from(normalizeBase64(data), 'base64').toString('utf-8');
+            } catch (err) {
+                console.warn('⚠️  Failed to decode email segment:', err.message);
+                return '';
             }
+        };
+
+        const htmlToText = (html) => {
+            if (!html) return '';
+            let text = html;
+
+            // Preserve natural line breaks from common block elements before stripping tags
+            text = text.replace(/<\s*(br|\/p|\/div|\/li|\/tr)\b[^>]*>/gi, '\n');
+            text = text.replace(/<script[\s\S]*?<\/script>/gi, '');
+            text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
+            text = text.replace(/<[^>]+>/g, ' ');
+
+            // Decode a few common HTML entities (enough for schedule parsing)
+            text = text
+                .replace(/&nbsp;/gi, ' ')
+                .replace(/&amp;/gi, '&')
+                .replace(/&quot;/gi, '"')
+                .replace(/&#39;/gi, "'")
+                .replace(/&lt;/gi, '<')
+                .replace(/&gt;/gi, '>');
+
+            // Normalise whitespace but preserve deliberate line breaks
+            text = text.replace(/\r\n/g, '\n');
+            text = text.replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n');
+            text = text.replace(/\n{3,}/g, '\n\n');
+            text = text.replace(/[ \t]{2,}/g, ' ');
+            return text.trim();
+        };
+
+        const collectParts = (part) => {
+            if (!part) return;
+            const mimeType = part.mimeType || '';
+            const data = part.body?.data;
+
+            if (mimeType === 'text/plain' && data) {
+                collectedParts.push({ type: 'text/plain', content: decodePart(data) });
+                return;
+            }
+
+            if (mimeType === 'text/html' && data) {
+                collectedParts.push({ type: 'text/html', content: htmlToText(decodePart(data)) });
+                return;
+            }
+
+            if (part.parts && part.parts.length) {
+                part.parts.forEach(collectParts);
+            }
+        };
+
+        if (messageData?.payload) {
+            collectParts(messageData.payload);
         }
-        
-        return body;
+
+        // Fallback: sometimes the payload body is populated even without parts
+        if (collectedParts.length === 0 && messageData?.payload?.body?.data) {
+            collectedParts.push({ type: 'text/plain', content: decodePart(messageData.payload.body.data) });
+        }
+
+        const plainTextSegments = collectedParts.filter(part => part.type === 'text/plain' && part.content.trim());
+        const htmlSegments = collectedParts.filter(part => part.type === 'text/html' && part.content.trim());
+
+        // Prefer rendered HTML text when available since it contains the full weekly bulletin
+        let combined = '';
+        if (htmlSegments.length) {
+            combined = htmlSegments.map(part => part.content).join('\n');
+        } else if (plainTextSegments.length) {
+            combined = plainTextSegments.map(part => part.content).join('\n');
+        } else {
+            combined = collectedParts.map(part => part.content).join('\n');
+        }
+
+        return combined
+            .replace(/\r\n/g, '\n')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
     }
 
     /**
@@ -548,8 +675,10 @@ class ScheduleUpdater {
 
     /**
      * Parse email content for covers and themes information
+     * @param {Array} allMessages - Array of email message bodies
+     * @param {Boolean} isFirstEmail - If true, only extract themes (covers come from spreadsheet)
      */
-    parseEmailForScheduleInfo(allMessages) {
+    parseEmailForScheduleInfo(allMessages, isFirstEmail = true) {
         console.log('🔍 Parsing email content for schedule information...');
         
         const result = {
@@ -559,25 +688,36 @@ class ScheduleUpdater {
         };
         
         // Combine all messages for parsing
-        const fullContent = allMessages.join('\n\n');
+        const rawContent = (allMessages || []).join('\n\n');
+        const fullContent = rawContent.replace(/\r\n/g, '\n');
         console.log('📧 Email content length:', fullContent.length);
         console.log('📧 First 500 chars:', fullContent.substring(0, 500));
         
-        // Parse covers section
-        const coversMatch = fullContent.match(/Covers\s*:?(.*?)(?=\n\n|\nAmped Up theme|Bandra cycle themes|FIT theme|Best,|$)/is);
-        if (coversMatch) {
-            console.log('🎯 Found covers section:', coversMatch[1].substring(0, 200));
-            result.covers = this.parseCoversSection(coversMatch[1]);
-        } else {
-            console.log('❌ No covers section found');
-            console.log('🔍 Looking for alternative covers pattern...');
-            
-            // Try alternative pattern
-            const altCoversMatch = fullContent.match(/(Kemps\s*-.*?)(?=\n\nBandra|Bandra\s*-)/is);
-            if (altCoversMatch) {
-                console.log('🎯 Found alternative covers section:', altCoversMatch[1].substring(0, 200));
-                result.covers = this.parseCoversSection(altCoversMatch[1]);
+        // Parse covers section ONLY if this is NOT the first email
+        // First email: covers come from spreadsheet
+        // Subsequent emails: covers come from email body (changes/updates)
+        if (!isFirstEmail) {
+            console.log('🔍 Parsing covers from email body (subsequent email)...');
+            // Parse covers section - improved regex to capture entire section
+            // The covers section typically goes from "Covers :" until the next major section like "Amped Up theme" or "Bandra cycle themes"
+            const coversMatch = fullContent.match(/Covers\s*:?\s*([\s\S]*?)(?=\n\s*(?:Amped Up theme|Bandra cycle themes|FIT theme|Best,\s*$))/i);
+            if (coversMatch) {
+                console.log('🎯 Found covers section, length:', coversMatch[1].length);
+                console.log('🎯 Covers preview:', coversMatch[1].substring(0, 300));
+                result.covers = this.parseCoversSection(coversMatch[1]);
+            } else {
+                console.log('❌ No covers section found');
+                console.log('🔍 Looking for alternative covers pattern...');
+                
+                // Try alternative pattern - capture everything between "Covers" and next section
+                const altCoversMatch = fullContent.match(/Covers\s*:?\s*([\s\S]*?)(?=\n\s*(?:Amped|Bandra cycle|FIT theme|Best))/i);
+                if (altCoversMatch) {
+                    console.log('🎯 Found alternative covers section:', altCoversMatch[1].substring(0, 200));
+                    result.covers = this.parseCoversSection(altCoversMatch[1]);
+                }
             }
+        } else {
+            console.log('ℹ️  Skipping email body covers parsing (first email - using spreadsheet covers only)');
         }
         
         // Parse themes sections - using simpler approach to avoid matchAll issues
@@ -593,12 +733,12 @@ class ScheduleUpdater {
             themeSections.push({ type: 'Amped Up', content: ampedContent });
         }
         
-        const bandra_themes = fullContent.match(/Bandra cycle themes\s*-\s*\*?\s*(.*?)(?=\nBest,|$)/is);
+        const bandra_themes = fullContent.match(/Bandra cycle themes\s*[-–:]\s*\*?\s*(.*?)(?=\nBest,|$)/is);
         if (bandra_themes) {
             themeSections.push({ type: 'Bandra cycle', content: bandra_themes[1] });
         }
         
-        const fit_theme = fullContent.match(/FIT theme\s*:\s*All classes,\s*all week\s*-\s*(TABATA)/i);
+        const fit_theme = fullContent.match(/FIT theme\s*:\s*All classes,\s*all week\s*[-–]\s*(TABATA)/i);
         if (fit_theme) {
             themeSections.push({ type: 'FIT', content: `All classes, all week - ${fit_theme[1].trim()}` });
         }
@@ -652,10 +792,16 @@ class ScheduleUpdater {
             // Parse cover entries
             const coverInfo = this.parseCoverLine(trimmedLine, currentLocation, previousDay);
             if (coverInfo) {
-                console.log(`✅ Parsed cover:`, coverInfo);
-                covers.push(coverInfo);
-                // Update previousDay for potential continuation lines
-                previousDay = coverInfo.day;
+                // Check if it's just a day marker (sets context for following lines)
+                if (coverInfo.isDayMarker) {
+                    console.log(`📅 Set day context to: ${coverInfo.day}`);
+                    previousDay = coverInfo.day;
+                } else {
+                    console.log(`✅ Parsed cover:`, coverInfo);
+                    covers.push(coverInfo);
+                    // Update previousDay for potential continuation lines
+                    previousDay = coverInfo.day;
+                }
             } else {
                 console.log(`❌ Could not parse cover line: "${trimmedLine}"`);
             }
@@ -693,7 +839,26 @@ class ScheduleUpdater {
      * Parse individual cover line
      */
     parseCoverLine(line, location, previousDay = null) {
-        // Pattern: Day - time(s) - trainer
+        // Pattern 1: Day with times but no trainer (sets context for next lines)
+        // Example: "Wed - 8 am, 9.15 am" or "Thurs - 7.30,9, 11 am"
+        // This pattern matches: Day - <anything that looks like times with am/pm but no dash after>
+        const dayOnlyPattern = /^([A-Za-z]+)\s*-\s*([^-]+(?:am|pm)[^-]*)$/i;
+        const dayOnlyMatch = line.match(dayOnlyPattern);
+        
+        if (dayOnlyMatch && !dayOnlyMatch[2].includes('-')) {
+            // Verify it has time-like patterns (numbers with am/pm)
+            if (/\d.*(?:am|pm)/i.test(dayOnlyMatch[2])) {
+                const day = this.expandDayName(dayOnlyMatch[1].trim());
+                console.log(`📅 Found day declaration (no trainer): ${day} with times: ${dayOnlyMatch[2].trim()}`);
+                // Return a marker object to update previousDay
+                return {
+                    isDayMarker: true,
+                    day: day
+                };
+            }
+        }
+        
+        // Pattern 2: Day - time(s) - trainer
         // Example: "Mon - 8,9.15, 11.30 am - Richard"
         const coverPattern = /^([A-Za-z]+)\s*-\s*(.*?)\s*-\s*(.+)$/;
         const match = line.match(coverPattern);
@@ -717,11 +882,13 @@ class ScheduleUpdater {
                     type: 'cover'
                 };
             } else {
-                // Regular time-based cover
+                // Regular time-based cover with class types
+                const timeArray = Array.isArray(timeInfo) ? timeInfo : [timeInfo];
+                
                 return {
                     location: location,
                     day: this.expandDayName(day),
-                    times: Array.isArray(timeInfo) ? timeInfo : [timeInfo],
+                    timesWithClasses: timeArray, // Array of {time, classType}
                     trainer: trainer,
                     type: 'cover'
                 };
@@ -737,14 +904,38 @@ class ScheduleUpdater {
             const trainer = continuationMatch[2].trim();
             
             const timeInfo = this.parseTimeText(timeText);
+            const timeArray = Array.isArray(timeInfo) ? timeInfo : [timeInfo];
             
             return {
                 location: location,
                 day: previousDay,
-                times: Array.isArray(timeInfo) ? timeInfo : [timeInfo],
+                timesWithClasses: timeArray, // Array of {time, classType}
                 trainer: trainer,
                 type: 'cover'
             };
+        }
+        
+        // Try pattern for descriptive continuation lines like "Evening cycles - Raunak", "Evening Barre classes - Pranjali"
+        const descriptiveContinuationPattern = /^((?:morning|evening|afternoon)\s+(?:cycle|cycles|barre|barre classes|classes))\s*-\s*(.+)$/i;
+        const descriptiveMatch = line.match(descriptiveContinuationPattern);
+        
+        if (descriptiveMatch && previousDay) {
+            const description = descriptiveMatch[1].trim();
+            const trainer = descriptiveMatch[2].trim();
+            
+            const timeInfo = this.parseTimeText(description);
+            
+            if (timeInfo.timePattern) {
+                console.log(`✅ Parsed descriptive continuation cover: ${description} -> ${trainer} for ${previousDay}`);
+                return {
+                    location: location,
+                    day: previousDay,
+                    timePattern: timeInfo.timePattern,
+                    classType: timeInfo.classType,
+                    trainer: trainer,
+                    type: 'cover'
+                };
+            }
         }
         
         return null;
@@ -755,12 +946,21 @@ class ScheduleUpdater {
      */
     parseTimeText(timeText) {
         // Handle patterns like "8,9.15, 11.30 am" or "6,7.30 pm" or "Morning cycles"
-        const times = [];
+        // NEW: Also handle "9 am lab, 10.15 B57, 11.30 am Lab" with class types
+        const timesWithClasses = [];
         
-        // Handle descriptive times like "Morning cycles", "Evening Barre classes"
+        // Handle descriptive times like "Morning cycles", "Evening Barre classes", "Evening cycles"
         if (/morning.*cycle/i.test(timeText)) {
             return {
                 timePattern: 'morning',
+                classType: 'CYCLE',
+                description: timeText.trim()
+            };
+        }
+        
+        if (/evening.*cycle/i.test(timeText)) {
+            return {
+                timePattern: 'evening', 
                 classType: 'CYCLE',
                 description: timeText.trim()
             };
@@ -774,39 +974,75 @@ class ScheduleUpdater {
             };
         }
         
+        if (/evening.*class/i.test(timeText)) {
+            // Generic evening classes - could be any class type
+            return {
+                timePattern: 'evening', 
+                classType: 'ALL',
+                description: timeText.trim()
+            };
+        }
+        
+        if (/morning.*class/i.test(timeText)) {
+            // Generic morning classes - could be any class type
+            return {
+                timePattern: 'morning', 
+                classType: 'ALL',
+                description: timeText.trim()
+            };
+        }
+        
         // For other descriptive times, return as-is
         if (/morning|evening|afternoon/i.test(timeText)) {
-            times.push(timeText.trim());
-            return times;
+            timesWithClasses.push({ time: timeText.trim() });
+            return timesWithClasses;
         }
         
         // Extract AM/PM suffix
         const ampmMatch = timeText.match(/\b(am|pm)\b/i);
         const suffix = ampmMatch ? ampmMatch[1].toLowerCase() : '';
         
-        // Split by commas and parse each time
+        // Split by commas and parse each time with its class type
         const timeSegments = timeText.split(',');
         
         for (let segment of timeSegments) {
-            segment = segment.trim()
-                .replace(/\b(am|pm)\b/i, '') // Remove AM/PM
-                .replace(/lab|B57|Barre|cycle/gi, '') // Remove class type indicators
+            segment = segment.trim();
+            
+            // Extract class type indicator if present
+            let classType = null;
+            if (/\blab\b/i.test(segment)) {
+                classType = 'lab';
+            } else if (/\bB57\b/i.test(segment)) {
+                classType = 'barre57';
+            } else if (/\bbarre\b/i.test(segment)) {
+                classType = 'barre';
+            } else if (/\bcycle\b/i.test(segment)) {
+                classType = 'cycle';
+            }
+            
+            // Remove AM/PM and class type indicators to get clean time
+            const cleanTime = segment
+                .replace(/\b(am|pm)\b/i, '')
+                .replace(/\b(lab|B57|barre|cycle)\b/gi, '')
                 .trim();
             
-            if (segment) {
+            if (cleanTime) {
                 // Convert . to : for time format
-                let normalizedTime = segment.replace(/(\d+)\.(\d+)/, '$1:$2');
+                let normalizedTime = cleanTime.replace(/(\d+)\.(\d+)/, '$1:$2');
                 
                 // Add suffix if we have one
                 if (suffix && normalizedTime.match(/^\d+:?\d*$/)) {
-                    times.push(`${normalizedTime} ${suffix}`.trim());
-                } else {
-                    times.push(normalizedTime.trim());
+                    normalizedTime = `${normalizedTime} ${suffix}`;
                 }
+                
+                timesWithClasses.push({
+                    time: normalizedTime.trim(),
+                    classType: classType
+                });
             }
         }
         
-        return times;
+        return timesWithClasses;
     }
 
     /**
@@ -949,17 +1185,33 @@ class ScheduleUpdater {
      * Parse individual hosted class line
      */
     parseHostedLine(line) {
-        // Pattern: "Friday - Bay club BKC - cycle - 7.30 & 9 am - Vivaran"
-        const pattern = /^([A-Za-z]+)\s*-\s*(.*?)\s*-\s*(.*?)\s*-\s*(.*?)\s*-\s*(.+)$/;
-        const match = line.match(pattern);
+        // New pattern for: "Kemps - Saturday - 11.30 am - B57 - SOLD OUT - for Raman Lamba - Pranjali"
+        // Format: Location - Day - Time - Class - SOLD OUT - for <someone> - Trainer
+        const newPattern = /^([^-]+?)\s*-\s*([A-Za-z]+)\s*-\s*([\d.:]+\s*(?:am|pm)?)\s*-\s*([^-]+?)\s*-\s*SOLD OUT\s*-\s*for\s+[^-]+\s*-\s*(.+)$/i;
+        const newMatch = line.match(newPattern);
         
-        if (match) {
+        if (newMatch) {
             return {
-                day: this.expandDayName(match[1]),
-                location: match[2].trim(),
-                classType: match[3].trim(),
-                time: match[4].trim(),
-                trainer: match[5].trim(),
+                location: newMatch[1].trim(),
+                day: this.expandDayName(newMatch[2].trim()),
+                time: newMatch[3].trim(),
+                classType: newMatch[4].trim(),
+                trainer: newMatch[5].trim(),
+                type: 'hosted'
+            };
+        }
+        
+        // Fallback pattern: "Location - Day - class - time - Trainer"
+        const fallbackPattern = /^([^-]+?)\s*-\s*([A-Za-z]+)\s*-\s*([^-]+?)\s*-\s*([\d.:]+\s*(?:&\s*[\d.:]+\s*)?(?:am|pm)?)\s*-\s*(.+)$/i;
+        const fallbackMatch = line.match(fallbackPattern);
+        
+        if (fallbackMatch) {
+            return {
+                location: fallbackMatch[1].trim(),
+                day: this.expandDayName(fallbackMatch[2].trim()),
+                classType: fallbackMatch[3].trim(),
+                time: fallbackMatch[4].trim(),
+                trainer: fallbackMatch[5].trim(),
                 type: 'hosted'
             };
         }
@@ -970,7 +1222,7 @@ class ScheduleUpdater {
     /**
      * Update target spreadsheet with parsed schedule data
      */
-    async updateTargetSpreadsheet(scheduleData, emailInfo) {
+    async updateTargetSpreadsheet(scheduleData, emailInfo, isFirstEmail = true) {
         console.log('📝 Updating target spreadsheet...');
         
         try {
@@ -1021,8 +1273,18 @@ class ScheduleUpdater {
                 await this.writeDataToTargetSheet(finalValues, sheets);
             }
             
-            // Step 7: Clean the updated data and populate the Cleaned sheet
-            console.log('🧹 Step 7: Cleaning data and populating Cleaned sheet...');
+            // Store emailInfo for use in cleaning process
+            this.currentEmailInfo = emailInfo;
+            
+            // Step 7: Populate the Covers sheet with all covers
+            console.log('📋 Step 7: Populating Covers sheet...');
+            // Only include email covers if this is NOT the first email
+            const emailCoversToUse = isFirstEmail ? [] : emailInfo.covers;
+            console.log(`📊 Using ${emailCoversToUse.length} email covers (first email: ${isFirstEmail})`);
+            await this.populateCoversSheet(sheets, emailCoversToUse);
+            
+            // Step 8: Clean the updated data and populate the Cleaned sheet
+            console.log('🧹 Step 8: Cleaning data and populating Cleaned sheet...');
             await this.cleanAndPopulateCleanedSheet(sheets);
             
             console.log(`✅ Target spreadsheet updated with fresh data and email themes/covers applied`);
@@ -1097,6 +1359,17 @@ class ScheduleUpdater {
             const values = response.data.values || [];
             console.log(`📊 Retrieved ${values.length} rows from linked Schedule sheet`);
             
+            // Store raw spreadsheet data for pattern matching
+            this.rawSpreadsheetData = values;
+            
+            // Extract and store covers from spreadsheet
+            this.spreadsheetCovers = this.extractSpreadsheetCovers(values);
+            
+            // Log covers found in spreadsheet
+            console.log('\n📋 ===== COVERS FROM SPREADSHEET =====');
+            this.logSpreadsheetCovers(values);
+            console.log('=====================================\n');
+            
             return values;
             
         } catch (error) {
@@ -1117,6 +1390,14 @@ class ScheduleUpdater {
     }
 
     /**
+     * Check if email contains a Google Sheets link (indicates first/initial email)
+     */
+    hasSpreadsheetLink(emailBody) {
+        const sheetsLinkPattern = /https:\/\/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/;
+        return sheetsLinkPattern.test(emailBody);
+    }
+
+    /**
      * Normalize class names specifically for the cleaned sheet output
      * This uses the comprehensive mapping provided by the user
      */
@@ -1125,7 +1406,8 @@ class ScheduleUpdater {
         const val = raw.toString().trim().replace(/\s+/g, ' ').toLowerCase();
         const map = {
             // Direct mappings to new "Studio" format
-            'hosted class': 'Studio Hosted Class',
+            'hosted': 'Studio Barre 57',  // Hosted classes default to Barre 57
+            'hosted class': 'Studio Barre 57',
             'fit': 'Studio FIT',
             'back body blaze': 'Studio Back Body Blaze',
             'bbb': 'Studio Back Body Blaze',
@@ -1248,22 +1530,46 @@ class ScheduleUpdater {
                     const coverRaw = row[coverCols[setIdx]];
                     const themeRaw = row[trainer2Cols[setIdx]]; // Theme from Trainer 2 column
                     
+                    // Parse time first so it's available for logging
+                    const timeRaw = row[timeColIndex];
+                    const timeDate = this.parseTimeToDate(timeRaw);
+                    let time = timeDate ? this.formatTime(timeDate) : timeRaw;
+                    
                     let trainer = this.normalizeTrainerName(trainerRaw);
                     let notes = '';
                     
-                    // Handle covers
-                    if (coverRaw) {
-                        const coverNorm = this.normalizeTrainerName(coverRaw);
-                        notes = coverNorm ? `Cover: ${coverNorm}` : 'Cover noted';
-                        if (coverNorm) trainer = coverNorm;
+                    // **STEP 1: Check if this is a hosted class (class name = "hosted") - CHECK THIS FIRST**
+                    const isHostedClass = (trainerRaw && trainerRaw.toString().toLowerCase().includes('hosted')) || 
+                                         (classNameRaw && classNameRaw.toString().toLowerCase().includes('hosted'));
+                    
+                    // If hosted class, mark as SOLD OUT and use cover trainer if available
+                    if (isHostedClass) {
+                        notes = 'SOLD OUT';
+                        // For hosted classes, if there's a cover, that's the actual trainer doing the class
+                        if (coverRaw && coverRaw.toString().trim() && coverRaw.toString().toLowerCase() !== 'undefined') {
+                            trainer = this.normalizeTrainerName(coverRaw);
+                            console.log(`  Hosted class at ${day} ${time} - marked as SOLD OUT - Trainer: ${trainer}`);
+                        } else {
+                            console.log(`  Hosted class at ${day} ${time} - marked as SOLD OUT`);
+                        }
+                    } else {
+                        // **STEP 2: For non-hosted classes, check if Cover column has a value**
+                        // If Cover column has a value, replace Trainer 1 with the cover trainer
+                        if (coverRaw && coverRaw.toString().trim() && coverRaw.toString().toLowerCase() !== 'undefined') {
+                            const coverNorm = this.normalizeTrainerName(coverRaw);
+                            if (coverNorm) {
+                                const originalTrainer = trainer || 'regular instructor';
+                                notes = `Cover: ${coverNorm} for ${originalTrainer}`;
+                                trainer = coverNorm; // Replace trainer with cover
+                                console.log(`  ✓ Applied cover at ${day} ${time}: ${coverNorm} covering for ${originalTrainer}`);
+                            }
+                        }
                     }
                     
-                    // Exclude classes without a trainer
-                    if (!trainer) continue;
-
-                    const timeRaw = row[timeColIndex];
-                    const timeDate = this.parseTimeToDate(timeRaw);
-                    const time = timeDate ? this.formatTime(timeDate) : timeRaw;
+                    // Exclude classes without a trainer (unless hosted and will be filled from email)
+                    if (!trainer && !isHostedClass) continue;
+                    // Normalize time for consistent alignment
+                    time = this.normalizeTimeDisplay(time);
                     
                     // Get actual date from row 2 (same column as location)
                     const rawDate = dateRow[locationCols[setIdx]];
@@ -1290,6 +1596,26 @@ class ScheduleUpdater {
                         Notes: notes,
                         Date: date,
                         Theme: theme
+                    });
+                }
+            }
+
+            // Add hosted classes from email info if available
+            if (this.currentEmailInfo && this.currentEmailInfo.hostedClasses) {
+                console.log(`📋 Adding ${this.currentEmailInfo.hostedClasses.length} hosted classes from email...`);
+                for (const hosted of this.currentEmailInfo.hostedClasses) {
+                    // Normalize location to match our format
+                    const normalizedLocation = this.normalizeLocationName(hosted.location);
+                    
+                    allClasses.push({
+                        Day: hosted.day,
+                        Time: hosted.time,
+                        Location: normalizedLocation,
+                        Class: this.normalizeClassNameForCleaned(hosted.classType),
+                        Trainer: this.normalizeTrainerName(hosted.trainer),
+                        Notes: 'SOLD OUT',
+                        Date: this.getDateForDay(hosted.day),
+                        Theme: ''
                     });
                 }
             }
@@ -1559,7 +1885,8 @@ class ScheduleUpdater {
     isValidClassName(name) {
         if (!name) return false;
         const val = name.toString().trim().toLowerCase();
-        const invalid = ['smita', 'anandita', 'host', 'cover', 'replacement', 'sakshi', 'parekh', 'taarika'];
+        // Invalid class names - classes from these should be skipped as they come from trainer/notes fields
+        const invalid = ['smita', 'anandita', 'cover', 'replacement', 'sakshi', 'parekh', 'taarika', 'host'];
         if (invalid.some(i => val.includes(i))) return false;
         if (/^\d+$/.test(val)) return false;
         if (val.split(' ').length === 1 && val.length < 3) return false;
@@ -1592,6 +1919,24 @@ class ScheduleUpdater {
         let t = timeStr.toString().trim().replace(/\s*[:,.]\s*/g, ':');
         t = t.replace(/(\d)(AM|PM)/gi, '$1 $2').toUpperCase();
         return t;
+    }
+
+    /**
+     * Normalize time string for consistent display alignment
+     */
+    normalizeTimeDisplay(timeStr) {
+        if (!timeStr) return '';
+        const normalized = this.normalizeTimeString(timeStr);
+        const match = normalized.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (!match) return timeStr;
+        
+        let hour = parseInt(match[1]);
+        const minute = match[2];
+        const ampm = match[3].toUpperCase();
+        
+        // Format with consistent spacing: "10:00 AM" or " 8:30 AM" (space-padded for alignment)
+        const paddedHour = hour < 10 ? ` ${hour}` : `${hour}`;
+        return `${paddedHour}:${minute} ${ampm}`;
     }
 
     /**
@@ -1850,10 +2195,17 @@ class ScheduleUpdater {
                     let trainer2Col = -1;
                     let coverCol = -1;
                     
+                    // Column mappings must match cleanAndPopulateCleanedSheet exactly:
+                    // locationCols = [1, 7, 13, 18, 23, 28, 34];
+                    // classCols = [2, 8, 14, 19, 24, 29, 35];
+                    // trainer1Cols = [3, 9, 15, 20, 25, 30, 36];
+                    // trainer2Cols = [4, 10, 16, 21, 26, 31, 37]; // For themes
+                    // coverCols = [6, 12, 17, 22, 27, 32, 38];
+                    
                     if (day === 'Monday' && colIndex === 1) {
                         locationCol = 1; classCol = 2; trainer1Col = 3; trainer2Col = 4; coverCol = 6;
                     } else if (day === 'Tuesday' && colIndex === 7) {
-                        locationCol = 7; classCol = 8; trainer1Col = 9; trainer2Col = 11; coverCol = 12;
+                        locationCol = 7; classCol = 8; trainer1Col = 9; trainer2Col = 10; coverCol = 12;
                     } else if (day === 'Wednesday' && colIndex === 13) {
                         locationCol = 13; classCol = 14; trainer1Col = 15; trainer2Col = 16; coverCol = 17;
                     } else if (day === 'Thursday' && colIndex === 18) {
@@ -1929,8 +2281,13 @@ class ScheduleUpdater {
         let coversApplied = 0;
         let themesApplied = 0;
         
-        // Apply covers
-        console.log('🔍 Starting cover application...');
+        // NOTE: DO NOT CLEAR COVER COLUMNS
+        // The spreadsheet data from the linked sheet already contains covers.
+        // We only add ADDITIONAL covers from the email body, not replace existing ones.
+        console.log('ℹ️  Preserving existing covers from spreadsheet, will only add additional covers from email...');
+        
+        // Apply additional covers from email
+        console.log('🔍 Starting additional cover application from email...');
         for (const cover of emailInfo.covers) {
             console.log(`📝 Processing cover for ${cover.day} at ${cover.location}: ${cover.trainer}`);
             console.log(`🔍 Cover details:`, JSON.stringify(cover, null, 2));
@@ -1956,6 +2313,11 @@ class ScheduleUpdater {
                     const locationCell = String(row[colConfig.locationCol] || '').trim().toLowerCase();
                     const classCell = String(row[colConfig.classCol] || '').toLowerCase();
                     
+                    // Skip hosted classes - they should not receive covers from email
+                    if (classCell.includes('hosted')) {
+                        continue;
+                    }
+                    
                     // Debug: Show what we're checking
                     if (timeCell && locationCell.includes(cover.location.toLowerCase())) {
                         console.log(`🔍 Checking row ${rowIndex + 1}: Time="${timeCell}" Location="${locationCell}" Class="${classCell}" vs Cover Location="${cover.location}"`);
@@ -1967,26 +2329,83 @@ class ScheduleUpdater {
                     let shouldApplyCover = false;
                     
                     if (cover.timePattern && cover.classType) {
-                        // Handle pattern-based covers (morning cycles, evening barre)
+                        // Handle pattern-based covers (morning cycles, evening barre, evening cycles, etc.)
                         console.log(`🔍 Checking pattern cover: ${cover.timePattern} ${cover.classType} against ${timeCell} ${classCell}`);
                         
-                        if (cover.timePattern === 'morning') {
-                            // Check if it's AM and matches class type
-                            if (timeCell.toLowerCase().includes('am') && 
-                                classCell.includes(cover.classType.toLowerCase())) {
-                                shouldApplyCover = true;
-                                console.log(`✅ Morning ${cover.classType} match found`);
-                            }
-                        } else if (cover.timePattern === 'evening') {
-                            // Check if it's PM and matches class type
-                            if (timeCell.toLowerCase().includes('pm') && 
-                                classCell.includes('barre')) { // More flexible for barre matching
-                                shouldApplyCover = true;
-                                console.log(`✅ Evening Barre match found`);
+                        const isPM = timeCell.toLowerCase().includes('pm');
+                        const isAM = timeCell.toLowerCase().includes('am');
+                        
+                        // Determine if the class type matches
+                        let classTypeMatches = false;
+                        if (cover.classType === 'ALL') {
+                            classTypeMatches = true; // Match any class type
+                        } else if (cover.classType.toLowerCase() === 'cycle') {
+                            classTypeMatches = classCell.includes('cycle') || classCell.includes('powercycle');
+                        } else if (cover.classType.toLowerCase() === 'barre') {
+                            classTypeMatches = classCell.includes('barre') || classCell.includes('b57');
+                        } else {
+                            classTypeMatches = classCell.includes(cover.classType.toLowerCase());
+                        }
+                        
+                        if (cover.timePattern === 'morning' && isAM && classTypeMatches) {
+                            shouldApplyCover = true;
+                            console.log(`✅ Morning ${cover.classType} match found`);
+                        } else if (cover.timePattern === 'evening' && isPM && classTypeMatches) {
+                            shouldApplyCover = true;
+                            console.log(`✅ Evening ${cover.classType} match found`);
+                        }
+                    } else if (cover.timesWithClasses && cover.timesWithClasses.length > 0) {
+                        // NEW: Handle specific time-based covers with class types
+                        // Example: [{time: "9 am", classType: "lab"}, {time: "10:15 am", classType: "barre57"}, {time: "11:30 am", classType: "lab"}]
+                        for (const timeWithClass of cover.timesWithClasses) {
+                            const coverTime = timeWithClass.time || timeWithClass;
+                            const coverClassType = timeWithClass.classType;
+                            
+                            // Normalize time formats for comparison
+                            const normalizedCoverTime = this.normalizeTime(coverTime);
+                            const normalizedCellTime = this.normalizeTime(timeCell);
+                            
+                            console.log(`🔍 Time+Class comparison: "${normalizedCellTime}" vs "${normalizedCoverTime}" | Cell class="${classCell}" vs Cover class="${coverClassType || 'any'}"`);
+                            
+                            // Check time match first
+                            const timeMatches = this.timeMatches(normalizedCellTime, normalizedCoverTime);
+                            
+                            if (timeMatches) {
+                                // If class type is specified in cover, must match the actual class
+                                if (coverClassType) {
+                                    let classMatches = false;
+                                    
+                                    if (coverClassType === 'lab') {
+                                        // Match strength/lab classes
+                                        classMatches = classCell.includes('strength') || classCell.includes('lab');
+                                    } else if (coverClassType === 'barre57' || coverClassType === 'barre') {
+                                        // Match barre classes
+                                        classMatches = classCell.includes('barre') || classCell.includes('b57');
+                                    } else if (coverClassType === 'cycle') {
+                                        // Match cycle classes
+                                        classMatches = classCell.includes('cycle') || classCell.includes('powercycle');
+                                    } else {
+                                        // Generic match
+                                        classMatches = classCell.includes(coverClassType.toLowerCase());
+                                    }
+                                    
+                                    if (classMatches) {
+                                        shouldApplyCover = true;
+                                        console.log(`✅ Time+Class match found! ${normalizedCellTime} ${coverClassType}`);
+                                        break;
+                                    } else {
+                                        console.log(`❌ Time matches but class type doesn't: expected "${coverClassType}", got "${classCell}"`);
+                                    }
+                                } else {
+                                    // No class type specified, just time match is enough
+                                    shouldApplyCover = true;
+                                    console.log(`✅ Time match found (no class filter)!`);
+                                    break;
+                                }
                             }
                         }
                     } else if (cover.times && cover.times.length > 0) {
-                        // Handle specific time-based covers
+                        // Legacy: Handle old format without class types
                         for (const coverTime of cover.times) {
                             // Normalize time formats for comparison
                             const normalizedCoverTime = this.normalizeTime(coverTime);
@@ -2004,9 +2423,17 @@ class ScheduleUpdater {
                     }
                     
                     if (shouldApplyCover) {
-                        row[colConfig.coverCol] = cover.trainer;
-                        coversApplied++;
-                        console.log(`✅ Applied cover: ${cover.trainer} to ${cover.day} ${timeCell} ${classCell} at row ${rowIndex + 1}, col ${colConfig.coverCol + 1}`);
+                        // Only apply cover if the cell is currently empty
+                        // This preserves existing covers from the spreadsheet
+                        const existingCover = String(row[colConfig.coverCol] || '').trim();
+                        
+                        if (!existingCover || existingCover.toLowerCase() === 'undefined') {
+                            row[colConfig.coverCol] = cover.trainer;
+                            coversApplied++;
+                            console.log(`✅ Applied additional cover from email: ${cover.trainer} to ${cover.day} ${timeCell} ${classCell} at row ${rowIndex + 1}, col ${colConfig.coverCol + 1}`);
+                        } else {
+                            console.log(`ℹ️  Skipping - existing cover already present: "${existingCover}" at ${cover.day} ${timeCell}`);
+                        }
                     }
                 }
             }
@@ -2265,7 +2692,7 @@ class ScheduleUpdater {
     /**
      * Normalize class names for consistent matching
      */
-    normalizeClassName(className) {
+    normalizeClassNameForDisplay(className) {
         if (!className) return '';
         
         return className
@@ -2283,8 +2710,8 @@ class ScheduleUpdater {
     classNamesMatch(className1, className2) {
         if (!className1 || !className2) return false;
         
-        const norm1 = this.normalizeClassName(className1);
-        const norm2 = this.normalizeClassName(className2);
+        const norm1 = this.normalizeClassNameForDisplay(className1);
+        const norm2 = this.normalizeClassNameForDisplay(className2);
         
         // Direct match
         if (norm1 === norm2) return true;
@@ -2414,6 +2841,9 @@ class ScheduleUpdater {
         });
         console.log('✅ HTML loaded successfully');
         
+        // Ensure sold-out badge CSS is present
+        this.ensureSoldOutBadgeCSS();
+        
         // DEBUG: Count PDF-related elements before processing
         console.log('\n🔍 DEBUG: PDF Elements Count Before Processing:');
         console.log('  - <script> tags:', this.$('script').length);
@@ -2424,6 +2854,46 @@ class ScheduleUpdater {
         console.log('  - metadata script:', this.$('script#metadata').length);
         console.log('  - annotations script:', this.$('script#annotations').length);
         console.log('  - Total spans:', this.$('span').length);
+    }
+
+    /**
+     * Ensure sold-out badge CSS is present in the HTML
+     */
+    ensureSoldOutBadgeCSS() {
+        const styleTag = this.$('style').first();
+        if (!styleTag.length) {
+            console.warn('⚠️  No style tag found, skipping CSS check');
+            return;
+        }
+
+        const existingStyle = styleTag.html();
+        if (!existingStyle || !existingStyle.includes('.sold-out-badge')) {
+            console.log('🎨 Injecting sold-out badge CSS...');
+            const soldOutBadgeCSS = `
+        .sold-out-badge {
+            background: linear-gradient(135deg, #991b1b 0%, #7f1d1d 50%, #6b1c1c 100%);
+            color: white;
+            padding: 5px 14px;
+            border-radius: 0 14px 14px 0;
+            font-size: 9px;
+            font-weight: 700;
+            margin-left: 14px;
+            display: inline-block;
+            vertical-align: middle;
+            line-height: 1.3;
+            box-shadow: 0 4px 12px rgba(153, 27, 27, 0.6), 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            position: relative;
+            top: -1px;
+        }
+        `;
+            styleTag.append(soldOutBadgeCSS);
+            console.log('✅ Sold-out badge CSS injected');
+        } else {
+            console.log('✅ Sold-out badge CSS already present');
+        }
     }
 
     /**
@@ -2563,54 +3033,12 @@ class ScheduleUpdater {
 
     /**
      * Get theme for a class based on known patterns when no theme data is in spreadsheet
+     * NOTE: This function now returns empty - all themes should come from email parsing
      */
     getThemeForClass(classData) {
-        const day = classData.Day ? classData.Day.toLowerCase() : '';
-        const time = classData.Time ? classData.Time.toLowerCase() : '';
-        const location = classData.Location ? classData.Location.toLowerCase() : '';
-        const classType = classData.Class ? classData.Class.toLowerCase() : '';
-        
-        // All FIT classes get TABATA theme
-        if (classType.includes('fit')) {
-            return 'TABATA';
-        }
-        
-        // Bandra PowerCycle specific themes based on parsed email data
-        if (location.includes('bandra') && classType.includes('powercycle')) {
-            // Monday 10:00 AM - Taylor Swift vs Kendrick Lamar
-            if (day === 'monday' && (time.includes('10:00') || time.includes('10 am'))) {
-                return 'Taylor Swift vs Kendrick lamar';
-            }
-            // Tuesday 7:15 PM - Taylor Swift Vs Kendrick
-            if (day === 'tuesday' && (time.includes('7:15 pm') || time.includes('19:15'))) {
-                return 'Taylor Swift Vs Kendrick';
-            }
-            // Wednesday 6:00 PM - Latin Heat
-            if (day === 'wednesday' && (time.includes('6:00 pm') || time.includes('18:00') || time.includes('6 pm'))) {
-                return 'Latin Heat';
-            }
-            // Thursday 8:00 AM - Latin Heat
-            if (day === 'thursday' && (time.includes('8:00 am') || time.includes('8 am') || time.includes('08:00'))) {
-                return 'Latin Heat';
-            }
-            // Saturday 9:30 AM - Taylor Swift Vs Kendrick Lamar
-            if (day === 'saturday' && (time.includes('9:30 am') || time.includes('09:30'))) {
-                return 'Taylor Swift Vs Kendrick Lamar';
-            }
-            // Sunday 10:00 AM - Latin Heat
-            if (day === 'sunday' && (time.includes('10:00 am') || time.includes('10 am') || time.includes('10:00'))) {
-                return 'Latin Heat';
-            }
-        }
-        
-        // Kemps Amped Up classes get specific themes
-        if (location.includes('kemps') && (classType.includes('amped up') || classType === 'fit')) {
-            if (day === 'tuesday') {
-                return 'Icy Isometric';
-            }
-        }
-        
-        return ''; // No theme found
+        // Only use themes that are explicitly parsed from the email body
+        // No hardcoded themes - return empty string
+        return '';
     }
 
     /**
@@ -2628,15 +3056,15 @@ class ScheduleUpdater {
         // Use consistent ⚡️ icon for all badges
         const icon = '⚡️';
         
-        // Standardized styling for both locations
+        // Standardized styling for both locations - one-sided rounded corners (right side only)
         const standardStyle = {
             background: bgColor,
             color: 'white',
-            padding: '3px 8px',
-            borderRadius: '12px', // Consistent rounded corners
+            padding: '3px 8px 3px 6px',
+            borderRadius: '0 12px 12px 0', // One-sided rounded (right side only)
             fontSize: '8px',      // Consistent font size
-            fontWeight: '700',    // Consistent font weight
-            marginLeft: '8px',
+            fontWeight: '700',    // Consistent font weight for badges
+            marginLeft: '6px',    // Consistent spacing from class name
             display: 'inline-block',
             verticalAlign: 'middle',
             lineHeight: '1.3',
@@ -2703,8 +3131,15 @@ class ScheduleUpdater {
      */
     isHeaderElement($span) {
         const text = $span.text().trim().toUpperCase();
+        
+        // Don't treat class names starting with "STUDIO " as headers
+        // because they're actual class names that need to be updated
+        if (/^STUDIO\s+/.test(text) && text.includes('-')) {
+            // This looks like "STUDIO CLASSNAME - TRAINER", not a header
+            return false;
+        }
+        
         const protectedKeywords = [
-            'STUDIO',
             'SCHEDULE',
             'KEMPS',
             'CORNER',
@@ -2723,16 +3158,20 @@ class ScheduleUpdater {
             'SUNDAY'
         ];
         
-        // Check if text contains any protected keywords
-        const containsKeyword = protectedKeywords.some(keyword => text.includes(keyword));
+        // Check if text contains any protected keywords (but not if it's part of class-trainer format)
+        if (!text.includes('-')) {
+            // Only if there's NO hyphen (which would indicate trainer name)
+            const containsKeyword = protectedKeywords.some(keyword => text.includes(keyword));
+            if (containsKeyword) return true;
+        }
         
         // Check if it looks like a date (contains "th" and month names)
         const looksLikeDate = /(?:january|february|march|april|may|june|july|august|september|october|november|december).*\d{1,2}(?:st|nd|rd|th)/i.test(text);
         
-        // Check if text is very long (likely a header)
-        const isLongText = text.length > 30;
+        // Check if text is very long (likely a header) - but not if it contains typical trainer separators
+        const isLongText = text.length > 30 && !text.includes('-');
         
-        return containsKeyword || looksLikeDate || (isLongText && text.includes(':'));
+        return looksLikeDate || (isLongText && text.includes(':'));
     }
 
     /**
@@ -2755,20 +3194,107 @@ class ScheduleUpdater {
             };
         };
 
+        // Helper to determine which page a span is on
+        const getPageForSpan = ($span) => {
+            // Check section.page parent with aria-label
+            const $section = $span.closest('section.page');
+            if ($section.length > 0) {
+                const ariaLabel = $section.attr('aria-label') || '';
+                if (ariaLabel.includes('Page 2')) return 2;
+                if (ariaLabel.includes('Page 1')) return 1;
+            }
+            // Fallback: check for pg1Overlay or pg2Overlay ancestor
+            if ($span.closest('[id*="pg2"]').length > 0) return 2;
+            if ($span.closest('[id*="pg1"]').length > 0) return 1;
+            return 1; // Default to page 1
+        };
+
+        // NEW APPROACH: Find all day headers and build a map of spans to days
+        // Day headers are spans containing day names like "MONDAY", "TUESDAY", etc.
+        const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        const dayHeaderPattern = /^(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)\s*$/i;
+        
+        // Build a list of all day header spans with their positions
+        const dayHeaders = [];
+        this.$('span').each((_i, elem) => {
+            const $span = this.$(elem);
+            const text = $span.text().trim();
+            if (dayHeaderPattern.test(text)) {
+                const style = $span.attr('style') || '';
+                const leftMatch = style.match(/left:\s*([\d.]+)px/);
+                const bottomMatch = style.match(/bottom:\s*([\d.]+)px/);
+                const left = leftMatch ? parseFloat(leftMatch[1]) : 0;
+                const bottom = bottomMatch ? parseFloat(bottomMatch[1]) : 0;
+                const dayName = text.trim().charAt(0).toUpperCase() + text.trim().slice(1).toLowerCase();
+                const page = getPageForSpan($span);
+                dayHeaders.push({ elem, $span, text: dayName, left, bottom, page });
+            }
+        });
+        
+        console.log(`📅 Found ${dayHeaders.length} day headers in HTML`);
+        dayHeaders.forEach(dh => {
+            console.log(`  - ${dh.text} at left:${dh.left}px, bottom:${dh.bottom}px, page:${dh.page}`);
+        });
+        
+        // Helper to find the day for a time span based on day headers
+        // Logic: Find the day header that is closest to this span (same column, higher bottom value)
+        const findDayByHeader = ($timeSpan) => {
+            const style = $timeSpan.attr('style') || '';
+            const leftMatch = style.match(/left:\s*([\d.]+)px/);
+            const bottomMatch = style.match(/bottom:\s*([\d.]+)px/);
+            const spanLeft = leftMatch ? parseFloat(leftMatch[1]) : 0;
+            const spanBottom = bottomMatch ? parseFloat(bottomMatch[1]) : 0;
+            const spanPage = getPageForSpan($timeSpan);
+            
+            // Find day headers in the same column (within 50px tolerance) and same page
+            // that are above this span (higher bottom value)
+            let bestMatch = null;
+            let bestDist = Infinity;
+            
+            for (const dh of dayHeaders) {
+                // Must be on same page
+                if (dh.page !== spanPage) continue;
+                
+                // Must be in same column (similar left position, within 100px tolerance)
+                const leftDiff = Math.abs(dh.left - spanLeft);
+                if (leftDiff > 100) continue;
+                
+                // Day header should be above or at the same level as the time span (higher or equal bottom)
+                if (dh.bottom < spanBottom) continue;
+                
+                // Calculate distance - prefer headers that are closest above
+                const dist = dh.bottom - spanBottom + leftDiff * 0.1; // Weight left difference slightly
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestMatch = dh;
+                }
+            }
+            
+            return bestMatch ? bestMatch.text : null;
+        };
+
+        // Check if this is a multi-page PDF (Bandra style with pg1 and pg2, or section.page elements)
+        const hasPage1 = this.$('#pg1').length > 0 || this.$('section.page[aria-label*="Page 1"]').length > 0;
+        const hasPage2 = this.$('#pg2').length > 0 || this.$('section.page[aria-label*="Page 2"]').length > 0;
+        const isMultiPagePDF = hasPage1 && hasPage2;
+        console.log(`📄 Multi-page PDF detection: hasPage1=${hasPage1}, hasPage2=${hasPage2}, isMultiPagePDF=${isMultiPagePDF}`);
+        
+        // For Bandra multi-page PDF:
+        // Page 1: Mon, Tue, Wed, Thu (4 days)
+        // Page 2: Fri, Sat, Sun (3 days)
+        const page1Days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday'];
+        const page2Days = ['Friday', 'Saturday', 'Sunday'];
+
         // Collect all time spans
         const timeSpans = this.$('span').filter((_i, elem) => {
             return /^\d{1,2}:\d{2}\s*(?:AM|PM)$/i.test(this.$(elem).text().trim());
         }).get();
 
         console.log(`\n🔍 DEBUG: Found ${timeSpans.length} time spans to process`);
+        console.log(`📄 Multi-page PDF detected: ${isMultiPagePDF}`);
 
         // Build column clusters by x-position (left). Tolerance ~ 20px
-        const lefts = [];
-        timeSpans.forEach((el) => {
-            const pos = getSpanPosition(this.$(el));
-            if (!Number.isNaN(pos.left)) lefts.push(pos.left);
-        });
-
+        // For multi-page, cluster separately for each page
         const clusterPositions = (vals, tolerance = 20) => {
             const sorted = vals.slice().sort((a, b) => a - b);
             const clusters = [];
@@ -2791,38 +3317,121 @@ class ScheduleUpdater {
             }));
         };
 
-        let clusters = clusterPositions(lefts, 20);
-        // If too many clusters, keep the 7 most populated, then sort by center
-        if (clusters.length > 7) {
-            clusters.sort((a, b) => b.count - a.count);
-            clusters = clusters.slice(0, 7);
-        }
-        // Sort by x position ascending
-        clusters.sort((a, b) => a.center - b.center);
+        let clusters, dayByColumnIndex;
+        let page1Clusters = [], page2Clusters = [];
+        let page1DayByColumn = {}, page2DayByColumn = {};
 
-        const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-        if (clusters.length !== 7) {
-            console.warn(`⚠️  Expected 7 day columns but found ${clusters.length}. Proceeding with left-to-right mapping for available columns.`);
+        if (isMultiPagePDF) {
+            // Separate clustering for each page
+            const page1Lefts = [], page2Lefts = [];
+            timeSpans.forEach((el) => {
+                const $el = this.$(el);
+                const pos = getSpanPosition($el);
+                if (!Number.isNaN(pos.left)) {
+                    if (getPageForSpan($el) === 1) {
+                        page1Lefts.push(pos.left);
+                    } else {
+                        page2Lefts.push(pos.left);
+                    }
+                }
+            });
+
+            page1Clusters = clusterPositions(page1Lefts, 20);
+            page2Clusters = clusterPositions(page2Lefts, 20);
+            
+            // Keep most populated clusters for each page
+            if (page1Clusters.length > page1Days.length) {
+                page1Clusters.sort((a, b) => b.count - a.count);
+                page1Clusters = page1Clusters.slice(0, page1Days.length);
+            }
+            page1Clusters.sort((a, b) => a.center - b.center);
+            
+            if (page2Clusters.length > page2Days.length) {
+                page2Clusters.sort((a, b) => b.count - a.count);
+                page2Clusters = page2Clusters.slice(0, page2Days.length);
+            }
+            page2Clusters.sort((a, b) => a.center - b.center);
+
+            // Map clusters to days
+            page1Clusters.forEach((c, idx) => {
+                if (idx < page1Days.length) page1DayByColumn[idx] = page1Days[idx];
+            });
+            page2Clusters.forEach((c, idx) => {
+                if (idx < page2Days.length) page2DayByColumn[idx] = page2Days[idx];
+            });
+
+            console.log(`📄 Page 1: ${page1Clusters.length} columns detected for ${page1Days.join(', ')}`);
+            console.log(`📄 Page 2: ${page2Clusters.length} columns detected for ${page2Days.join(', ')}`);
+        } else {
+            // Original single-page logic
+            const lefts = [];
+            timeSpans.forEach((el) => {
+                const pos = getSpanPosition(this.$(el));
+                if (!Number.isNaN(pos.left)) lefts.push(pos.left);
+            });
+
+            clusters = clusterPositions(lefts, 20);
+            // If too many clusters, keep the 7 most populated, then sort by center
+            if (clusters.length > 7) {
+                clusters.sort((a, b) => b.count - a.count);
+                clusters = clusters.slice(0, 7);
+            }
+            // Sort by x position ascending
+            clusters.sort((a, b) => a.center - b.center);
+
+            const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            if (clusters.length !== 7) {
+                console.warn(`⚠️  Expected 7 day columns but found ${clusters.length}. Proceeding with left-to-right mapping for available columns.`);
+            }
+            dayByColumnIndex = {};
+            clusters.forEach((_c, idx) => {
+                if (idx < dayOrder.length) dayByColumnIndex[idx] = dayOrder[idx];
+            });
         }
-        const dayByColumnIndex = {};
-        clusters.forEach((_c, idx) => {
-            if (idx < dayOrder.length) dayByColumnIndex[idx] = dayOrder[idx];
-        });
 
         const findDayForSpan = ($span) => {
-            const pos = getSpanPosition($span);
-            if (Number.isNaN(pos.left) || clusters.length === 0) return null;
-            // Find nearest cluster center
-            let bestIdx = 0;
-            let bestDist = Math.abs(pos.left - clusters[0].center);
-            for (let i = 1; i < clusters.length; i++) {
-                const d = Math.abs(pos.left - clusters[i].center);
-                if (d < bestDist) {
-                    bestDist = d;
-                    bestIdx = i;
-                }
+            // First try day header-based detection (more accurate for Bandra-style layouts)
+            const dayFromHeader = findDayByHeader($span);
+            if (dayFromHeader) {
+                return dayFromHeader;
             }
-            return dayByColumnIndex[bestIdx] || null;
+            
+            // Fall back to column-based detection
+            const pos = getSpanPosition($span);
+            if (Number.isNaN(pos.left)) return null;
+
+            if (isMultiPagePDF) {
+                const page = getPageForSpan($span);
+                const pageClusters = page === 1 ? page1Clusters : page2Clusters;
+                const pageDayByColumn = page === 1 ? page1DayByColumn : page2DayByColumn;
+                
+                if (pageClusters.length === 0) return null;
+                
+                // Find nearest cluster center
+                let bestIdx = 0;
+                let bestDist = Math.abs(pos.left - pageClusters[0].center);
+                for (let i = 1; i < pageClusters.length; i++) {
+                    const d = Math.abs(pos.left - pageClusters[i].center);
+                    if (d < bestDist) {
+                        bestDist = d;
+                        bestIdx = i;
+                    }
+                }
+                return pageDayByColumn[bestIdx] || null;
+            } else {
+                if (!clusters || clusters.length === 0) return null;
+                // Find nearest cluster center
+                let bestIdx = 0;
+                let bestDist = Math.abs(pos.left - clusters[0].center);
+                for (let i = 1; i < clusters.length; i++) {
+                    const d = Math.abs(pos.left - clusters[i].center);
+                    if (d < bestDist) {
+                        bestDist = d;
+                        bestIdx = i;
+                    }
+                }
+                return dayByColumnIndex[bestIdx] || null;
+            }
         };
 
         // First, clean up all existing theme badges to prevent duplicates
@@ -2830,6 +3439,9 @@ class ScheduleUpdater {
 
         // Track updated day+time to prevent duplicates within a day
         const updatedCombos = new Set();
+        
+        // Track which data records have been used (to handle multiple classes at same time)
+        const usedRecordKeys = new Set();
 
         timeSpans.forEach((timeElem, index) => {
             const $timeSpan = this.$(timeElem);
@@ -2845,6 +3457,17 @@ class ScheduleUpdater {
             }
 
             const classesForDay = scheduleByDay[detectedDay] || [];
+            
+            // Debug log for Saturday
+            if (detectedDay === 'Saturday' && timeText.includes('11:30')) {
+                console.log(`\n🔍 DEBUG: Saturday 11:30 AM matching`);
+                console.log(`   Available classes for Saturday:`, JSON.stringify(classesForDay.map(c => ({
+                    time: c.time,
+                    class: c.class,
+                    trainer: c.trainer,
+                    notes: c.notes
+                }))));
+            }
             
             // First, scan siblings to get the class name from HTML for better matching
             let htmlClassName = '';
@@ -2866,29 +3489,70 @@ class ScheduleUpdater {
                 tempCurrent = tempCurrent.nextSibling;
             }
             
+            if (detectedDay === 'Saturday' && timeText.includes('11:30')) {
+                console.log(`   HTML className extracted: "${htmlClassName}"`);
+            }
+            
             // Find matching class - prefer exact class name match if available
             let matchingClass = null;
             const timeMatches = classesForDay.filter(c => {
                 const normalizedCsvTime = this.normalizeTime(c.time);
                 const csvTimeCompare = normalizedCsvTime.replace(/^0/, '');
                 const htmlTimeCompare = timeText.replace(/^0/, '');
-                return csvTimeCompare.toLowerCase() === htmlTimeCompare.toLowerCase();
+                if (csvTimeCompare.toLowerCase() !== htmlTimeCompare.toLowerCase()) {
+                    return false;
+                }
+                // Exclude already-used records
+                const recordKey = `${detectedDay}|${c.time}|${c.class}|${c.trainer}`;
+                return !usedRecordKeys.has(recordKey);
             });
+            
+            if (detectedDay === 'Saturday' && timeText.includes('11:30')) {
+                console.log(`   Time matches found: ${timeMatches.length}`);
+                timeMatches.forEach(m => {
+                    console.log(`     - ${m.class} (${m.trainer}): notes="${m.notes}"`);
+                });
+            }
             
             if (timeMatches.length > 1 && htmlClassName) {
                 // Multiple classes at same time - match by class name too
                 matchingClass = timeMatches.find(c => {
                     const csvClassName = this.normalizeClassName(c.class).toUpperCase();
-                    return csvClassName.includes(htmlClassName) || htmlClassName.includes(csvClassName);
+                    const matches = csvClassName.includes(htmlClassName) || htmlClassName.includes(csvClassName);
+                    if (detectedDay === 'Saturday' && timeText.includes('11:30')) {
+                        console.log(`     Checking class "${c.class}": normalized="${csvClassName}", htmlClassName="${htmlClassName}", match=${matches}`);
+                    }
+                    return matches;
                 });
             }
             
-            // Fall back to first time match if no class name match found
+            // If still no match and multiple options, prefer non-sold-out over sold-out
+            if (!matchingClass && timeMatches.length > 1) {
+                const nonSoldOut = timeMatches.find(c => !c.notes || !c.notes.includes('SOLD OUT'));
+                if (detectedDay === 'Saturday' && timeText.includes('11:30')) {
+                    console.log(`   No class match found, preferring non-sold-out: ${nonSoldOut ? nonSoldOut.class : 'none found'}`);
+                }
+                if (nonSoldOut) {
+                    matchingClass = nonSoldOut;
+                } else {
+                    matchingClass = timeMatches[0];
+                }
+            }
+            
+            // Fall back to first unused time match if no class name match found
             if (!matchingClass && timeMatches.length > 0) {
                 matchingClass = timeMatches[0];
             }
 
+            if (detectedDay === 'Saturday' && timeText.includes('11:30')) {
+                console.log(`   Final matching class: ${matchingClass ? matchingClass.class + ' (notes: ' + matchingClass.notes + ')' : 'none'}\n`);
+            }
+
             if (matchingClass) {
+                // Mark this record as used
+                const recordKey = `${detectedDay}|${matchingClass.time}|${matchingClass.class}|${matchingClass.trainer}`;
+                usedRecordKeys.add(recordKey);
+                
                 // Create a unique key for this day+time+class+trainer combination to prevent duplicates
                 const normalizedClass = this.normalizeClassName(matchingClass.class).toUpperCase();
                 const normalizedTrainer = (matchingClass.trainer || '').trim().toUpperCase();
@@ -2907,12 +3571,19 @@ class ScheduleUpdater {
                     time: matchingClass.time
                 }));
                 
+                // Get time span's position to find related content spans
+                const timeSpanStyle = $timeSpan.attr('style') || '';
+                const timeSpanBottomMatch = timeSpanStyle.match(/bottom:\s*([\d.]+)px/);
+                const timeSpanBottom = timeSpanBottomMatch ? parseFloat(timeSpanBottomMatch[1]) : 0;
+                const timeSpanLeftMatch = timeSpanStyle.match(/left:\s*([\d.]+)px/);
+                const timeSpanLeft = timeSpanLeftMatch ? parseFloat(timeSpanLeftMatch[1]) : 0;
+                
                 let current = $timeSpan[0].nextSibling;
                 const spansToRemove = [];
                 let firstContentSpan = null;
                 let siblingsProcessed = 0;
 
-                console.log(`    Scanning siblings after time span...`);
+                console.log(`    Scanning siblings after time span (bottom: ${timeSpanBottom}px)...`);
                 
                 while (current) {
                     siblingsProcessed++;
@@ -2923,7 +3594,14 @@ class ScheduleUpdater {
                         const spanId = $currentSpan.attr('id');
                         const spanClass = $currentSpan.attr('class');
                         
-                        console.log(`      Sibling #${siblingsProcessed}: <span${spanId ? ' id="'+spanId+'"' : ''}${spanClass ? ' class="'+spanClass+'"' : ''}> text: "${spanText.substring(0, 50)}${spanText.length > 50 ? '...' : ''}"`);
+                        // Get this span's position
+                        const currentStyle = $currentSpan.attr('style') || '';
+                        const currentBottomMatch = currentStyle.match(/bottom:\s*([\d.]+)px/);
+                        const currentBottom = currentBottomMatch ? parseFloat(currentBottomMatch[1]) : 0;
+                        const currentLeftMatch = currentStyle.match(/left:\s*([\d.]+)px/);
+                        const currentLeft = currentLeftMatch ? parseFloat(currentLeftMatch[1]) : 0;
+                        
+                        console.log(`      Sibling #${siblingsProcessed}: <span${spanId ? ' id="'+spanId+'"' : ''}${spanClass ? ' class="'+spanClass+'"' : ''}> text: "${spanText.substring(0, 50)}${spanText.length > 50 ? '...' : ''}" (bottom: ${currentBottom}px, left: ${currentLeft}px)`);
                         
                         if (/^\d{1,2}:\d{2}\s*(?:AM|PM)$/i.test(spanText)) {
                             console.log(`      ↳ Next time span found, stopping scan`);
@@ -2936,19 +3614,30 @@ class ScheduleUpdater {
                             break;
                         }
                         
+                        // Check if this span is at the same bottom position (same row, within 5px tolerance)
+                        const sameRow = Math.abs(currentBottom - timeSpanBottom) <= 5;
+                        
                         // Enhanced badge removal - check for CSS classes, inline patterns, and content
                         const hasThemeClass = $currentSpan.hasClass('theme-badge');
                         const hasOldTheme = /[⚡️⚡]/.test(spanText);
                         const hasOldThemeText = /\b(?:theme|special)\b/i.test(spanText);
                         
+                        // Check if this span is a trainer-only span (starts with "- " or just a name after a hyphen)
+                        const isTrainerSpan = /^-\s*[A-Za-z]+/.test(spanText) || /^[A-Z][a-z]+\s*$/.test(spanText);
+                        
                         // Only mark for removal if it's not the first span (which contains class info) 
                         // OR if it's clearly a theme badge
+                        // OR if it's in the same row and appears to be part of the class info
                         if (!firstContentSpan) {
                             firstContentSpan = $currentSpan;
                             console.log(`      ↳ Marked as firstContentSpan (class content)`);
                             // For the first span, we'll replace its content entirely, so always add to removal list
                             spansToRemove.push($currentSpan);
                             console.log(`      ↳ First span will be replaced with updated content`);
+                        } else if (sameRow && (isTrainerSpan || spanText.length === 0)) {
+                            // Same row trainer span or empty span - mark for removal
+                            spansToRemove.push($currentSpan);
+                            console.log(`      ↳ Same-row trailing span (trainer or empty), added to removal list`);
                         } else if (hasThemeClass || hasOldTheme || hasOldThemeText) {
                             // Remove subsequent spans only if they contain actual theme badge content
                             spansToRemove.push($currentSpan);
@@ -2967,9 +3656,16 @@ class ScheduleUpdater {
 
                 if (firstContentSpan && spansToRemove.length > 0) {
                     const normalizedCSVClass = this.normalizeClassName(matchingClass.class);
-                    const classDisplay = this.toTitleCase(normalizedCSVClass);
+                    // Remove "Studio " prefix for display in HTML/PDF
+                    let classDisplay = this.formatClassName(normalizedCSVClass)
+                        .replace(/^STUDIO\s+/i, ''); // Remove "STUDIO " prefix
                     const trainerFirstName = this.getTrainerFirstName(matchingClass.trainer);
-                    const trainerDisplay = this.toTitleCase(trainerFirstName);
+                    const trainerDisplay = trainerFirstName.toUpperCase();
+                    
+                    // Check if this is a sold-out/hosted class
+                    const isSoldOut = matchingClass.notes && matchingClass.notes.includes('SOLD OUT');
+                    
+                    
                     let newText = classDisplay;
                     if (trainerDisplay) {
                         newText += ` - ${trainerDisplay}`;
@@ -2986,14 +3682,32 @@ class ScheduleUpdater {
                     // Create a new span with the content, preserving the original's attributes
                     const newSpan = firstContentSpan.clone().text(newText);
                     
-                    // Add theme badge as HTML if it exists
-                    if (themeBadge) {
-                        newSpan.append(themeBadge);
+                    // Remove old sold-out styling
+                    newSpan.removeClass('sold-out');
+                    
+                    // Remove old sold-out badges
+                    newSpan.find('.sold-out-badge').remove();
+                    
+                    // Apply sold-out styling if needed
+                    if (isSoldOut) {
+                        newSpan.addClass('sold-out');
                     }
                     
-                    // Apply consistent Montserrat font with darker weight and color for all days
+                    // Add theme badge as HTML if it exists
+                    let badgeHTML = themeBadge || '';
+                    if (isSoldOut) {
+                        badgeHTML += ' <span class="sold-out-badge">SOLD OUT</span>';
+                    }
+                    
+                    if (badgeHTML) {
+                        // Append badges to the span
+                        const currentHTML = newSpan.html();
+                        newSpan.html(currentHTML + badgeHTML);
+                    }
+                    
+                    // Apply consistent Montserrat font with regular weight for all days
                     newSpan.css('font-family', 'Montserrat, sans-serif');
-                    newSpan.css('font-weight', '600');
+                    newSpan.css('font-weight', '400');
                     newSpan.css('color', '#1a1a1a');
                     newSpan.css('letter-spacing', '-0.1px');
                     newSpan.css('font-style', 'normal');
@@ -3022,6 +3736,151 @@ class ScheduleUpdater {
         });
 
         console.log(`\n✅ Updated ${updateCount} positioned span elements`);
+        
+        // Clean up old sold-out styling from spans that no longer have matching sold-out classes
+        // NOTE: Disabled for now as it's removing newly created sold-out spans
+        // this.cleanupOldSoldOutStyling();
+        
+        // Post-processing: Normalize all class/trainer content spans for consistent styling
+        this.normalizeAllContentSpans();
+    }
+
+    /**
+     * Clean up sold-out styling from spans that no longer match sold-out classes
+     */
+    cleanupOldSoldOutStyling() {
+        console.log('🧹 Cleaning up old sold-out styling...');
+        const scheduleByDay = this.organizeScheduleByDay();
+        let cleanupCount = 0;
+
+        // For each span with sold-out class
+        this.$('span.sold-out').each((_, elem) => {
+            const $span = this.$(elem);
+            const text = $span.text().trim();
+            
+            // Skip if it's a sold-out badge
+            if ($span.hasClass('sold-out-badge')) return;
+            
+            // Try to extract day and time from nearby elements
+            let foundDay = null;
+            let foundTime = null;
+            
+            // Look backward for time span
+            let prev = $span[0].previousSibling;
+            while (prev) {
+                if (prev.type === 'tag' && prev.name === 'span') {
+                    const $prevSpan = this.$(prev);
+                    const prevText = $prevSpan.text().trim();
+                    if (/^\d{1,2}:\d{2}\s*(?:AM|PM)?$/i.test(prevText)) {
+                        foundTime = prevText;
+                        break;
+                    }
+                }
+                prev = prev.previousSibling;
+            }
+            
+            // Try to detect day from position or context
+            const style = $span.attr('style') || '';
+            const leftMatch = style.match(/left:\s*([\d.]+)px/);
+            const left = leftMatch ? parseFloat(leftMatch[1]) : 0;
+            
+            // Rough day detection by left position (this is a heuristic)
+            if (left < 200) foundDay = 'Monday'; // Leftmost columns
+            else if (left < 300) foundDay = 'Tuesday';
+            else if (left < 400) foundDay = 'Wednesday';
+            else if (left < 500) foundDay = 'Thursday';
+            else foundDay = 'Friday'; // Or Saturday/Sunday depending on layout
+            
+            // Check if this combination exists in schedule with SOLD OUT
+            if (foundDay && foundTime && scheduleByDay[foundDay]) {
+                const normalizedTime = this.normalizeTime(foundTime);
+                const matchingClass = scheduleByDay[foundDay].find(c => 
+                    this.normalizeTime(c.time).toLowerCase() === normalizedTime.toLowerCase()
+                );
+                
+                // If no matching sold-out class found, remove the styling
+                if (!matchingClass || !matchingClass.notes || !matchingClass.notes.includes('SOLD OUT')) {
+                    $span.removeClass('sold-out');
+                    $span.find('.sold-out-badge').remove();
+                    console.log(`    Removed sold-out styling from: ${text.substring(0, 50)}`);
+                    cleanupCount++;
+                }
+            }
+        });
+        
+        console.log(`✅ Cleaned up ${cleanupCount} old sold-out styles`);
+    }
+
+    /**
+     * Normalize all content spans to have consistent font-weight and casing
+     * This ensures any spans not matched by the main update loop still get proper styling
+     */
+    normalizeAllContentSpans() {
+        console.log('🎨 Normalizing all content spans for consistent styling...');
+        let normalizedCount = 0;
+        
+        // Find all spans that look like class content (contain trainer names or class names)
+        this.$('span').each((_, elem) => {
+            const $span = this.$(elem);
+            const text = $span.text().trim();
+            const style = $span.attr('style') || '';
+            
+            // Skip time spans, theme badges, and headers
+            if (/^\d{1,2}:\d{2}\s*(?:AM|PM)?$/i.test(text)) return;
+            if ($span.hasClass('theme-badge')) return;
+            if (text.length > 50) return; // Skip long text (likely headers)
+            if (text.length < 5) return; // Skip very short text
+            
+            // Check if this looks like a class-trainer entry (contains hyphen separator)
+            if (text.includes(' - ') && style.includes('font-family')) {
+                // Normalize font-weight to 400
+                if (style.includes('font-weight: 600')) {
+                    $span.css('font-weight', '400');
+                    
+                    // Also fix the casing of the text content
+                    const parts = text.split(' - ');
+                    if (parts.length >= 2) {
+                        const className = parts[0].trim();
+                        const trainerName = parts.slice(1).join(' - ').trim();
+                        
+                        // Format class name (powerCycle vs UPPERCASE)
+                        const formattedClass = this.formatClassName(className);
+                        // Trainer name always uppercase
+                        const formattedTrainer = trainerName.toUpperCase();
+                        
+                        // Remove "STUDIO " prefix from class display
+                        let formattedClassForDisplay = formattedClass.replace(/^STUDIO\s+/i, '');
+                        const newText = `${formattedClassForDisplay} - ${formattedTrainer}`;
+                        
+                        // Preserve any child elements (like theme badges and sold-out badges)
+                        const childBadges = $span.find('.theme-badge, .sold-out-badge').clone();
+                        const hasSoldOut = $span.find('.sold-out-badge').length > 0;
+                        
+                        if (text.includes('BARRE 57')) {
+                            console.log(`    DEBUG BARRE 57: childBadges.length=${childBadges.length}, hasSoldOut=${hasSoldOut}`);
+                        }
+                        
+                        $span.text(newText);
+                        
+                        // Re-append the badges
+                        if (childBadges.length) {
+                            childBadges.each((_, badge) => {
+                                $span.append(this.$(badge));
+                            });
+                        }
+                        
+                        // Restore sold-out class if badge exists
+                        if (hasSoldOut) {
+                            $span.addClass('sold-out');
+                        }
+                    }
+                    
+                    normalizedCount++;
+                }
+            }
+        });
+        
+        console.log(`✅ Normalized ${normalizedCount} content spans`);
     }
 
     /**
@@ -3044,8 +3903,8 @@ class ScheduleUpdater {
 
                 if (matchingClass) {
                     // Update data attributes
-                    const classDisplay = this.toTitleCase(this.normalizeClassName(matchingClass.class));
-                    const trainerDisplay = this.toTitleCase(matchingClass.trainer);
+                    const classDisplay = this.formatClassName(this.normalizeClassName(matchingClass.class));
+                    const trainerDisplay = this.getTrainerFirstName(matchingClass.trainer).toUpperCase();
                     $entry.attr('data-class', classDisplay);
                     $entry.attr('data-trainer', trainerDisplay);
                     
@@ -3057,13 +3916,21 @@ class ScheduleUpdater {
                         $entry.attr('data-theme', matchingClass.theme.trim());
                     }
 
-                    // Update text content with theme badge
+                    // Update text content with theme badge and sold-out status
                     let newText = `${time} – ${classDisplay} – ${trainerDisplay}`;
+                    
+                    // Check if this is a sold-out/hosted class
+                    const isSoldOut = matchingClass.notes && matchingClass.notes.includes('SOLD OUT');
+                    
                     if (matchingClass.theme && matchingClass.theme.trim()) {
                         const themeBadge = this.createThemeBadge(matchingClass.theme.trim(), this.currentLocation);
                         newText += ` ${themeBadge}`;
                     }
-                    if (matchingClass.notes) {
+                    
+                    if (isSoldOut) {
+                        // Add sold-out badge
+                        newText += ` <span class="sold-out-badge">SOLD OUT</span>`;
+                    } else if (matchingClass.notes && !matchingClass.notes.includes('SOLD OUT')) {
                         newText += ` – [${matchingClass.notes}]`;
                     }
                     
@@ -3619,6 +4486,610 @@ class ScheduleUpdater {
     }
 
     /**
+     * Extract covers from spreadsheet data using known column mappings
+     */
+    extractSpreadsheetCovers(sheetData) {
+        if (!sheetData || sheetData.length < 5) {
+            return [];
+        }
+
+        const covers = [];
+        
+        // Use known column mappings (must match cleanAndPopulateCleanedSheet exactly)
+        const columnMappings = {
+            'Monday': { location: 1, class: 2, trainer1: 3, trainer2: 4, cover: 6 },
+            'Tuesday': { location: 7, class: 8, trainer1: 9, trainer2: 10, cover: 12 },
+            'Wednesday': { location: 13, class: 14, trainer1: 15, trainer2: 16, cover: 17 },
+            'Thursday': { location: 18, class: 19, trainer1: 20, trainer2: 21, cover: 22 },
+            'Friday': { location: 23, class: 24, trainer1: 25, trainer2: 26, cover: 27 },
+            'Saturday': { location: 28, class: 29, trainer1: 30, trainer2: 31, cover: 32 },
+            'Sunday': { location: 34, class: 35, trainer1: 36, trainer2: 37, cover: 38 }
+        };
+        
+        // Scan rows for covers (starting from row 5, index 4)
+        for (let rowIndex = 4; rowIndex < sheetData.length; rowIndex++) {
+            const row = sheetData[rowIndex];
+            if (!row || !row[0]) continue; // Skip rows without time
+            
+            const time = String(row[0] || '').trim();
+            
+            // Check each day's cover column
+            for (const [dayName, columns] of Object.entries(columnMappings)) {
+                const location = String(row[columns.location] || '').trim();
+                const className = String(row[columns.class] || '').trim();
+                const trainer1 = String(row[columns.trainer1] || '').trim();
+                const cover = String(row[columns.cover] || '').trim();
+                
+                if (cover && cover.toLowerCase() !== 'undefined' && location && time) {
+                    covers.push({
+                        source: 'spreadsheet',
+                        day: dayName,
+                        time: time,
+                        location: location,
+                        className: className,
+                        originalTrainer: trainer1,
+                        coverTrainer: cover
+                    });
+                }
+            }
+        }
+        
+        return covers;
+    }
+
+    /**
+     * Log covers found in spreadsheet for debugging
+     */
+    logSpreadsheetCovers(sheetData) {
+        if (!sheetData || sheetData.length < 5) {
+            console.log('No spreadsheet data to analyze');
+            return;
+        }
+
+        // Use known column mappings (must match cleanAndPopulateCleanedSheet exactly)
+        const columnMappings = {
+            'Monday': { location: 1, class: 2, trainer1: 3, trainer2: 4, cover: 6 },
+            'Tuesday': { location: 7, class: 8, trainer1: 9, trainer2: 10, cover: 12 },
+            'Wednesday': { location: 13, class: 14, trainer1: 15, trainer2: 16, cover: 17 },
+            'Thursday': { location: 18, class: 19, trainer1: 20, trainer2: 21, cover: 22 },
+            'Friday': { location: 23, class: 24, trainer1: 25, trainer2: 26, cover: 27 },
+            'Saturday': { location: 28, class: 29, trainer1: 30, trainer2: 31, cover: 32 },
+            'Sunday': { location: 34, class: 35, trainer1: 36, trainer2: 37, cover: 38 }
+        };
+
+        console.log('Analyzing spreadsheet for covers...\n');
+        
+        // Scan rows for covers (starting from row 5, index 4)
+        for (let rowIndex = 4; rowIndex < sheetData.length; rowIndex++) {
+            const row = sheetData[rowIndex];
+            if (!row || !row[0]) continue; // Skip rows without time
+            
+            const time = String(row[0] || '').trim();
+            
+            // Check each day's cover column
+            for (const [dayName, columns] of Object.entries(columnMappings)) {
+                const location = String(row[columns.location] || '').trim();
+                const className = String(row[columns.class] || '').trim();
+                const trainer1 = String(row[columns.trainer1] || '').trim();
+                const cover = String(row[columns.cover] || '').trim();
+                
+                // Only log rows with covers
+                if (cover && cover.toLowerCase() !== 'undefined' && location) {
+                    console.log(`📍 ${dayName.padEnd(10)} | ${time.padEnd(10)} | ${location.padEnd(10)} | ${className.padEnd(20)} | Trainer: ${trainer1.padEnd(15)} | Cover: ${cover}`);
+                }
+            }
+        }
+    }
+
+    /**
+     * Log covers from email body for debugging
+     */
+    logEmailCovers(covers) {
+        if (!covers || covers.length === 0) {
+            console.log('No covers found in email body');
+            return;
+        }
+
+        console.log(`Found ${covers.length} cover entries:\n`);
+        
+        for (const cover of covers) {
+            const location = cover.location || 'N/A';
+            const day = cover.day || 'N/A';
+            const trainer = cover.trainer || 'N/A';
+            
+            if (cover.timePattern && cover.classType) {
+                // Pattern-based cover (e.g., "morning cycles", "evening barre")
+                console.log(`📧 ${day.padEnd(10)} | ${cover.timePattern.toUpperCase()} ${cover.classType.padEnd(10)} | ${location.padEnd(10)} | Trainer: ${trainer}`);
+            } else if (cover.timesWithClasses && cover.timesWithClasses.length > 0) {
+                // Time-based covers with class types
+                for (const timeWithClass of cover.timesWithClasses) {
+                    const time = timeWithClass.time || timeWithClass;
+                    const classType = timeWithClass.classType || 'any';
+                    console.log(`📧 ${day.padEnd(10)} | ${String(time).padEnd(10)} | ${location.padEnd(10)} | Class: ${classType.padEnd(15)} | Trainer: ${trainer}`);
+                }
+            } else if (cover.times && cover.times.length > 0) {
+                // Legacy format without class types
+                for (const time of cover.times) {
+                    console.log(`📧 ${day.padEnd(10)} | ${String(time).padEnd(10)} | ${location.padEnd(10)} | Class: any${' '.padEnd(15)} | Trainer: ${trainer}`);
+                }
+            } else {
+                console.log(`📧 ${day.padEnd(10)} | [unknown format] | ${location.padEnd(10)} | Trainer: ${trainer}`);
+            }
+        }
+    }
+
+    /**
+     * Get detailed cover information for email covers by looking up class names from spreadsheet
+     */
+    getEmailCoverDetails(emailCover) {
+        const details = [];
+        
+        if (!this.spreadsheetCovers || this.spreadsheetCovers.length === 0) {
+            // No spreadsheet data available, return basic info
+            if (emailCover.timesWithClasses && emailCover.timesWithClasses.length > 0) {
+                for (const timeWithClass of emailCover.timesWithClasses) {
+                    details.push({
+                        day: emailCover.day,
+                        time: timeWithClass.time,
+                        location: emailCover.location,
+                        className: this.mapClassTypeToFullName(timeWithClass.classType || ''),
+                        originalTrainer: '',
+                        coverTrainer: emailCover.trainer
+                    });
+                }
+            } else if (emailCover.times && emailCover.times.length > 0) {
+                for (const time of emailCover.times) {
+                    details.push({
+                        day: emailCover.day,
+                        time: time,
+                        location: emailCover.location,
+                        className: '',
+                        originalTrainer: '',
+                        coverTrainer: emailCover.trainer
+                    });
+                }
+            } else if (emailCover.timePattern) {
+                details.push({
+                    day: emailCover.day,
+                    time: emailCover.timePattern + (emailCover.classType ? ' ' + emailCover.classType : ''),
+                    location: emailCover.location,
+                    className: emailCover.classType ? this.mapClassTypeToFullName(emailCover.classType) : '',
+                    originalTrainer: '',
+                    coverTrainer: emailCover.trainer
+                });
+            }
+            return details;
+        }
+        
+        // Look up class names from spreadsheet covers
+        if (emailCover.timesWithClasses && emailCover.timesWithClasses.length > 0) {
+            for (const timeWithClass of emailCover.timesWithClasses) {
+                const matchingCovers = this.findMatchingSpreadsheetCovers(
+                    emailCover.day,
+                    timeWithClass.time,
+                    emailCover.location,
+                    timeWithClass.classType
+                );
+                
+                if (matchingCovers.length > 0) {
+                    // Found matching classes in spreadsheet
+                    for (const match of matchingCovers) {
+                        details.push({
+                            day: emailCover.day,
+                            time: match.time,
+                            location: match.location,
+                            className: match.className,
+                            originalTrainer: match.originalTrainer,
+                            coverTrainer: emailCover.trainer
+                        });
+                    }
+                } else {
+                    // No match found, use basic info
+                    details.push({
+                        day: emailCover.day,
+                        time: timeWithClass.time,
+                        location: emailCover.location,
+                        className: this.mapClassTypeToFullName(timeWithClass.classType || ''),
+                        originalTrainer: '',
+                        coverTrainer: emailCover.trainer
+                    });
+                }
+            }
+        } else if (emailCover.times && emailCover.times.length > 0) {
+            for (const time of emailCover.times) {
+                const matchingCovers = this.findMatchingSpreadsheetCovers(
+                    emailCover.day,
+                    time,
+                    emailCover.location
+                );
+                
+                if (matchingCovers.length > 0) {
+                    for (const match of matchingCovers) {
+                        details.push({
+                            day: emailCover.day,
+                            time: match.time,
+                            location: match.location,
+                            className: match.className,
+                            originalTrainer: match.originalTrainer,
+                            coverTrainer: emailCover.trainer
+                        });
+                    }
+                } else {
+                    details.push({
+                        day: emailCover.day,
+                        time: time,
+                        location: emailCover.location,
+                        className: '',
+                        originalTrainer: '',
+                        coverTrainer: emailCover.trainer
+                    });
+                }
+            }
+        } else if (emailCover.timePattern) {
+            // Pattern-based cover (morning/evening)
+            const matchingCovers = this.findMatchingSpreadsheetCoversByPattern(
+                emailCover.day,
+                emailCover.timePattern,
+                emailCover.location,
+                emailCover.classType
+            );
+            
+            if (matchingCovers.length > 0) {
+                for (const match of matchingCovers) {
+                    details.push({
+                        day: emailCover.day,
+                        time: match.time,
+                        location: match.location,
+                        className: match.className,
+                        originalTrainer: match.originalTrainer,
+                        coverTrainer: emailCover.trainer
+                    });
+                }
+            } else {
+                details.push({
+                    day: emailCover.day,
+                    time: emailCover.timePattern + (emailCover.classType ? ' ' + emailCover.classType : ''),
+                    location: emailCover.location,
+                    className: emailCover.classType ? this.mapClassTypeToFullName(emailCover.classType) : '',
+                    originalTrainer: '',
+                    coverTrainer: emailCover.trainer
+                });
+            }
+        }
+        
+        return details.length > 0 ? details : [{
+            day: emailCover.day,
+            time: 'All',
+            location: emailCover.location,
+            className: '',
+            originalTrainer: '',
+            coverTrainer: emailCover.trainer
+        }];
+    }
+    
+    /**
+     * Find matching spreadsheet covers by day, time, location, and optional class type
+     */
+    findMatchingSpreadsheetCovers(day, time, location, classType = null) {
+        const matches = [];
+        const normalizedTime = this.normalizeTime(time);
+        
+        // First try: match with location
+        for (const cover of this.spreadsheetCovers) {
+            if (cover.day !== day) continue;
+            if (!this.matchLocation(cover.location, location)) continue;
+            if (!this.timeMatches(cover.time, normalizedTime)) continue;
+            
+            // If class type is specified, check if it matches
+            if (classType) {
+                if (!this.classTypeMatches(cover.className, classType)) continue;
+            }
+            
+            matches.push(cover);
+        }
+        
+        // If no matches found with location, try ANY location for that day/time
+        // This handles cases where email groups covers under one location but they span multiple locations
+        if (matches.length === 0) {
+            for (const cover of this.spreadsheetCovers) {
+                if (cover.day !== day) continue;
+                if (!this.timeMatches(cover.time, normalizedTime)) continue;
+                
+                // If class type is specified, check if it matches
+                if (classType) {
+                    if (!this.classTypeMatches(cover.className, classType)) continue;
+                }
+                
+                matches.push(cover);
+            }
+        }
+        
+        return matches;
+    }
+    
+    /**
+     * Find matching spreadsheet covers by pattern (morning/evening) and class type
+     * Also searches in ALL spreadsheet data (not just covers) to find all matching classes
+     */
+    findMatchingSpreadsheetCoversByPattern(day, pattern, location, classType) {
+        const matches = [];
+        const isMorning = pattern.toLowerCase().includes('morning');
+        const isEvening = pattern.toLowerCase().includes('evening');
+        
+        // First, check existing spreadsheet covers
+        for (const cover of this.spreadsheetCovers) {
+            if (cover.day !== day) continue;
+            
+            // Check time pattern
+            const time = cover.time.toLowerCase();
+            const isMorningClass = time.includes('am') && !time.match(/^(12):/);
+            const isEveningClass = time.includes('pm') && !time.match(/^(12):/);
+            
+            if (isMorning && !isMorningClass) continue;
+            if (isEvening && !isEveningClass) continue;
+            
+            // Check class type if specified
+            if (classType && !this.classTypeMatches(cover.className, classType)) continue;
+            
+            // For location: try exact match first, then any location
+            const locationMatches = this.matchLocation(cover.location, location);
+            if (locationMatches || !location) {
+                matches.push(cover);
+            }
+        }
+        
+        // If no matches in covers, search the raw spreadsheet data for all matching classes
+        if (matches.length === 0 && this.rawSpreadsheetData) {
+            matches.push(...this.findClassesInSpreadsheet(day, pattern, classType, location));
+        }
+        
+        return matches;
+    }
+    
+    /**
+     * Find all classes in spreadsheet that match pattern and class type
+     */
+    findClassesInSpreadsheet(day, pattern, classType, location = null) {
+        const matches = [];
+        if (!this.rawSpreadsheetData || this.rawSpreadsheetData.length < 5) return matches;
+        
+        const isMorning = pattern.toLowerCase().includes('morning');
+        const isEvening = pattern.toLowerCase().includes('evening');
+        
+        const dayRow = this.rawSpreadsheetData[2];
+        const headerRow = this.rawSpreadsheetData[3];
+        
+        // Find columns for this day
+        for (let colIndex = 0; colIndex < dayRow.length; colIndex++) {
+            const dayName = String(dayRow[colIndex] || '').trim();
+            if (dayName !== day) continue;
+            
+            const locationColIndex = colIndex;
+            const classColIndex = colIndex + 1;
+            const trainer1ColIndex = colIndex + 2;
+            
+            // Scan all rows for matching classes
+            for (let rowIndex = 4; rowIndex < this.rawSpreadsheetData.length; rowIndex++) {
+                const row = this.rawSpreadsheetData[rowIndex];
+                if (!row || !row[0]) continue;
+                
+                const time = String(row[0] || '').trim();
+                const cellLocation = String(row[locationColIndex] || '').trim();
+                const className = String(row[classColIndex] || '').trim();
+                const trainer = String(row[trainer1ColIndex] || '').trim();
+                
+                if (!time || !cellLocation || !className) continue;
+                
+                // Check time pattern
+                const timeLower = time.toLowerCase();
+                const isMorningClass = timeLower.includes('am') && !timeLower.match(/^(12):/);
+                const isEveningClass = timeLower.includes('pm') && !timeLower.match(/^(12):/);
+                
+                if (isMorning && !isMorningClass) continue;
+                if (isEvening && !isEveningClass) continue;
+                
+                // Check class type
+                if (classType && !this.classTypeMatches(className, classType)) continue;
+                
+                // Check location if specified
+                if (location && !this.matchLocation(cellLocation, location)) continue;
+                
+                matches.push({
+                    source: 'spreadsheet',
+                    day: day,
+                    time: time,
+                    location: cellLocation,
+                    className: className,
+                    originalTrainer: trainer,
+                    coverTrainer: '' // Will be filled in by caller
+                });
+            }
+        }
+        
+        return matches;
+    }
+    
+    /**
+     * Map short class type codes to full names
+     */
+    mapClassTypeToFullName(classType) {
+        const lowerType = classType.toLowerCase();
+        const mapping = {
+            'lab': 'Strength Lab',
+            'barre57': 'Barre57',
+            'b57': 'Barre57',
+            'barre': 'Barre57',
+            'mat57': 'Mat57',
+            'm57': 'Mat57',
+            'mat': 'Mat57',
+            'cycle': 'PowerCycle',
+            'bbb': 'Back Body Blaze',
+            'fit': 'FIT',
+            'cardio': 'Cardio B'
+        };
+        
+        return mapping[lowerType] || classType;
+    }
+    
+    /**
+     * Check if class name matches the class type
+     */
+    classTypeMatches(className, classType) {
+        const lowerClassName = className.toLowerCase();
+        const lowerClassType = classType.toLowerCase();
+        
+        // Direct match
+        if (lowerClassName.includes(lowerClassType)) return true;
+        
+        // Check aliases
+        if (lowerClassType === 'lab' && lowerClassName.includes('strength')) return true;
+        if (lowerClassType === 'barre57' || lowerClassType === 'b57' || lowerClassType === 'barre') {
+            if (lowerClassName.includes('barre') && lowerClassName.includes('57')) return true;
+            if (lowerClassName === 'barre57') return true;
+        }
+        if (lowerClassType === 'mat57' || lowerClassType === 'm57' || lowerClassType === 'mat') {
+            if (lowerClassName.includes('mat') && lowerClassName.includes('57')) return true;
+            if (lowerClassName === 'mat57') return true;
+        }
+        if (lowerClassType === 'cycle' && lowerClassName.includes('cycle')) return true;
+        if (lowerClassType === 'bbb' && lowerClassName.includes('back body blaze')) return true;
+        if (lowerClassType === 'fit' && lowerClassName === 'fit') return true;
+        if (lowerClassType === 'cardio' && lowerClassName.includes('cardio')) return true;
+        
+        return false;
+    }
+
+    /**
+     * Ensure a sheet exists in the spreadsheet, create if it doesn't
+     */
+    async ensureSheetExists(sheets, sheetName) {
+        try {
+            // Get spreadsheet metadata to check if sheet exists
+            const spreadsheet = await sheets.spreadsheets.get({
+                spreadsheetId: GOOGLE_CONFIG.TARGET_SPREADSHEET_ID
+            });
+            
+            const sheetExists = spreadsheet.data.sheets.some(
+                sheet => sheet.properties.title === sheetName
+            );
+            
+            if (!sheetExists) {
+                console.log(`📄 Creating new sheet: ${sheetName}`);
+                await sheets.spreadsheets.batchUpdate({
+                    spreadsheetId: GOOGLE_CONFIG.TARGET_SPREADSHEET_ID,
+                    resource: {
+                        requests: [{
+                            addSheet: {
+                                properties: {
+                                    title: sheetName
+                                }
+                            }
+                        }]
+                    }
+                });
+                console.log(`✅ Created sheet: ${sheetName}`);
+            } else {
+                console.log(`✓ Sheet "${sheetName}" already exists`);
+            }
+        } catch (error) {
+            console.error(`❌ Error ensuring sheet exists: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Populate the Covers sheet with all covers from spreadsheet and email
+     */
+    async populateCoversSheet(sheets, emailCovers) {
+        console.log('📋 Populating Covers sheet...');
+        
+        try {
+            // First, ensure the Covers sheet exists
+            await this.ensureSheetExists(sheets, 'Covers');
+            
+            // Clear existing data from the Covers sheet
+            console.log('🧹 Clearing existing data from Covers sheet...');
+            try {
+                await sheets.spreadsheets.values.clear({
+                    spreadsheetId: GOOGLE_CONFIG.TARGET_SPREADSHEET_ID,
+                    range: 'Covers!A:Z'
+                });
+                console.log('✅ Cleared existing data');
+            } catch (clearError) {
+                console.log('⚠️  Could not clear existing data (sheet might be empty):', clearError.message);
+            }
+            
+            // Prepare headers
+            const headers = ['Source', 'Day', 'Time', 'Location', 'Class', 'Original Trainer', 'Cover Trainer'];
+            const rows = [headers];
+            
+            // Add spreadsheet covers
+            if (this.spreadsheetCovers && this.spreadsheetCovers.length > 0) {
+                console.log(`📊 Adding ${this.spreadsheetCovers.length} covers from spreadsheet`);
+                for (const cover of this.spreadsheetCovers) {
+                    rows.push([
+                        cover.source,
+                        cover.day,
+                        cover.time,
+                        cover.location,
+                        cover.className,
+                        cover.originalTrainer,
+                        cover.coverTrainer
+                    ]);
+                }
+            }
+            
+            // Add email covers with class names looked up from spreadsheet
+            if (emailCovers && emailCovers.length > 0) {
+                console.log(`📧 Adding ${emailCovers.length} covers from email`);
+                for (const cover of emailCovers) {
+                    // Look up class names from spreadsheet for each time
+                    const coverDetails = this.getEmailCoverDetails(cover);
+                    
+                    // Add a row for each time/class combination
+                    for (const detail of coverDetails) {
+                        rows.push([
+                            'email',
+                            detail.day,
+                            detail.time,
+                            detail.location,
+                            detail.className,
+                            detail.originalTrainer,
+                            detail.coverTrainer
+                        ]);
+                    }
+                }
+            }
+            
+            console.log(`📝 Writing ${rows.length - 1} total cover entries to Covers sheet`);
+            
+            // Debug: Show sample email covers being written
+            console.log('\n📋 Sample email covers being written:');
+            const emailRows = rows.filter(r => r[0] === 'email').slice(0, 10);
+            for (const row of emailRows) {
+                console.log(`  ${row[0]} | ${row[1]} | ${row[2]} | ${row[3]} | ${row[4]} | ${row[6]}`);
+            }
+            console.log('');
+            
+            // Write to Covers sheet
+            await sheets.spreadsheets.values.update({
+                spreadsheetId: GOOGLE_CONFIG.TARGET_SPREADSHEET_ID,
+                range: 'Covers!A1',
+                valueInputOption: 'RAW',
+                resource: {
+                    values: rows
+                }
+            });
+            
+            console.log('✅ Successfully populated Covers sheet');
+            
+        } catch (error) {
+            console.error('❌ Error populating Covers sheet:', error.message);
+            // Don't throw - this is not critical to the main workflow
+        }
+    }
+
+    /**
      * Generate PDF with custom file name (does not upload). Uses current outputPath HTML.
      */
     async generatePDFNamed(pdfFileName) {
@@ -3720,8 +5191,8 @@ class ScheduleUpdater {
         
         try {
             const kempsPdfPath = path.join(__dirname, 'Schedule-Kemps.pdf');
-            const bandraPdfPath = path.join(__dirname, 'Bandra.pdf');
-            const combinedPdfPath = path.join(__dirname, 'Schedule-Combined.pdf');
+            const bandraPdfPath = path.join(__dirname, 'Schedule-Bandra.pdf');
+            const combinedPdfPath = path.join(__dirname, 'Schedule-Mumbai.pdf');
             
             // Check if both PDFs exist
             if (!fs.existsSync(kempsPdfPath)) {
@@ -3767,7 +5238,7 @@ class ScheduleUpdater {
             console.log(`   Theme/legend pages excluded from Kemps PDF only`);
             
             // Upload combined PDF to Google Drive
-            await this.uploadNamedPDF(combinedPdfPath, 'Schedule-Combined.pdf');
+            await this.uploadNamedPDF(combinedPdfPath, 'Schedule-Mumbai.pdf');
             
             return combinedPdfPath;
         } catch (error) {
@@ -3792,7 +5263,7 @@ class ScheduleUpdater {
             // Step 2: Update Bandra HTML and PDF
             console.log('📄 Step 2: Updating Bandra schedule...');
             await this.updateBandra();
-            const bandraPdfPath = path.join(__dirname, 'Bandra.pdf');
+            const bandraPdfPath = path.join(__dirname, 'Schedule-Bandra.pdf');
             console.log('   ✓ Bandra schedule updated');
             
             // Step 3: Generate combined PDF
@@ -3804,15 +5275,15 @@ class ScheduleUpdater {
             console.log('☁️  Step 4: Uploading all files to Google Drive...');
             await Promise.all([
                 this.uploadNamedPDF(kempsPdfPath, 'Schedule-Kemps.pdf'),
-                this.uploadNamedPDF(bandraPdfPath, 'Bandra.pdf'),
-                this.uploadNamedPDF(combinedPdfPath, 'Schedule-Combined.pdf')
+                this.uploadNamedPDF(bandraPdfPath, 'Schedule-Bandra.pdf'),
+                this.uploadNamedPDF(combinedPdfPath, 'Schedule-Mumbai.pdf')
             ]);
             
             console.log('🎉 Atomic file update completed successfully!');
             console.log('📊 Updated files:');
             console.log('   - Kemps.html & Schedule-Kemps.pdf');
-            console.log('   - Bandra.html & Bandra.pdf');
-            console.log('   - Schedule-Combined.pdf');
+            console.log('   - Bandra.html & Schedule-Bandra.pdf');
+            console.log('   - Schedule-Mumbai.pdf');
             console.log('   - All files uploaded to Google Drive');
             
         } catch (error) {
@@ -3845,8 +5316,9 @@ class ScheduleUpdater {
         this.currentLocation = 'bandra'; // Set location for theme badge styling
         console.log('\n🚀 Starting Bandra schedule update...');
         // Load all sheet records (does not disturb Kemps filtering already done)  
-        const records = await this.readSheet();
-        const bandraClasses = records.filter(r => r.Location && /Supreme HQ.*Bandra|Supreme HQ,\s*Bandra/i.test(r.Location));
+        await this.readSheet();
+        // Filter Bandra classes from allSheetRecords (not kwalityClasses which is Kemps only)
+        const bandraClasses = (this.allSheetRecords || []).filter(r => r.Location && /Supreme HQ.*Bandra|Supreme HQ,\s*Bandra/i.test(r.Location));
         console.log(`✅ Found ${bandraClasses.length} classes for Supreme HQ, Bandra`);
         // Temporarily switch context
         const originalHtmlPath = this.htmlPath;
@@ -3873,10 +5345,10 @@ class ScheduleUpdater {
         this.updateScheduleEntries();
         this.updateDateHeaders();
         this.save();
-        await this.generatePDFNamed('Bandra.pdf');
+        await this.generatePDFNamed('Schedule-Bandra.pdf');
         // Upload Bandra.pdf to Drive
-        const bandraPdfPath = path.join(__dirname, 'Bandra.pdf');
-        await this.uploadNamedPDF(bandraPdfPath, 'Bandra.pdf');
+        const bandraPdfPath = path.join(__dirname, 'Schedule-Bandra.pdf');
+        await this.uploadNamedPDF(bandraPdfPath, 'Schedule-Bandra.pdf');
         // Restore original context for safety
         this.htmlPath = originalHtmlPath;
         this.outputPath = originalOutputPath;
