@@ -23,7 +23,7 @@ const GOOGLE_CONFIG = {
 
 // Email processing configuration
 const EMAIL_CONFIG = {
-  SENDER_EMAIL: "mrigakshi@physique57mumbai.com",
+  SENDER_EMAIL: "mrigakshi@physique57mumbai.com" || "vivaran@physique57mumbai.com",
   SUBJECT_KEYWORD: "Mumbai schedule", // More specific to target current week format
   TRAINERS: [
     "Saniya", "Anisha", "Rohan", "Debs", "Richard", "Atulan", "Pranjali", 
