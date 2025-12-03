@@ -1,0 +1,16 @@
+
+// Updated Google OAuth Configuration with Gmail scope
+// Note: Sensitive credentials are now stored in environment variables
+require('dotenv').config();
+
+const GOOGLE_CONFIG = {
+  CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+  CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+  REFRESH_TOKEN: process.env.GOOGLE_REFRESH_TOKEN,
+  TOKEN_URL: process.env.GOOGLE_TOKEN_URL || "https://oauth2.googleapis.com/token",
+  FOLDER_ID: process.env.GOOGLE_FOLDER_ID || "1PPaEKOBcPtjSUpFZZArkRLEBcGO5h108",
+  SPREADSHEET_ID: process.env.GOOGLE_SPREADSHEET_ID || "1OhhnD-9R_876ehw1xROZpyd0VcCLTwuuUUnh3A1Alv4",
+  SHEET_NAME: process.env.GOOGLE_SHEET_NAME || "Cleaned",
+  TARGET_SPREADSHEET_ID: "1OhhnD-9R_876ehw1xROZpyd0VcCLTwuuUUnh3A1Alv4",
+  TARGET_SHEET_NAME: "Schedule"
+};

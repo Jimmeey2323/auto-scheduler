@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schedule Validator - CSV vs PDF Comparison</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .upload-section {
+            margin-bottom: 40px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2C2D2D;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 2px;
+        }
+
+        .upload-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .upload-box {
+            border: 2px dashed #667eea;
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            background: #f8f9ff;
+        }
+
+        .upload-box:hover {
+            border-color: #764ba2;
+            background: #f0f2ff;
+            transform: translateY(-2px);
+        }
+
+        .upload-box.dragover {
+            border-color: #764ba2;
+            background: #e8ebff;
+            border-style: solid;
+        }
+
+        .upload-box.has-file {
+            border-color: #10b981;
+            background: #f0fdf4;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .upload-label {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2C2D2D;
+            margin-bottom: 8px;
+        }
+
+        .upload-hint {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .file-info {
+            margin-top: 15px;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #374151;
+            display: none;
+        }
+
+        .file-info.show {
+            display: block;
+        }
+
+        .file-name {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        .btn {
+            padding: 14px 32px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #e5e7eb;
+            color: #374151;
+        }
+
+        .btn-secondary:hover {
+            background: #d1d5db;
+        }
+
+        .results-section {
+            margin-top: 40px;
+            display: none;
+        }
+
+        .results-section.show {
+            display: block;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            display: none;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .summary-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .discrepancies-list {
+            background: #f9fafb;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .discrepancy-item {
+            background: white;
+            border-left: 4px solid #ef4444;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .discrepancy-item.match {
+            border-left-color: #10b981;
+        }
+
+        .view-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .tab-button {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            font-size: 15px;
+            font-weight: 600;
+            color: #6b7280;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .tab-button:hover {
+            color: #667eea;
+        }
+
+        .tab-button.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .discrepancy-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .discrepancy-location {
+            font-size: 12px;
+            font-weight: 600;
+            color: #667eea;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .discrepancy-day {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .discrepancy-time {
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .comparison-column h4 {
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+
+        .comparison-value {
+            font-size: 14px;
+            color: #1f2937;
+            padding: 8px 12px;
+            background: #f3f4f6;
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+
+        .comparison-value.mismatch {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .comparison-value.match {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .no-discrepancies {
+            text-align: center;
+            padding: 60px 20px;
+            color: #059669;
+        }
+
+        .no-discrepancies-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        .no-discrepancies h3 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .no-discrepancies p {
+            font-size: 16px;
+            color: #6b7280;
+        }
+
+        @media (max-width: 768px) {
+            .upload-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .comparison-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Schedule Validator</h1>
+            <p>Compare CSV schedule data with PDF files to identify discrepancies</p>
+        </div>
+
+        <div class="content">
+            <!-- CSV Upload Section -->
+            <div class="upload-section">
+                <h2 class="section-title">CSV Schedule File</h2>
+                <div class="upload-grid">
+                    <div class="upload-box" id="csv-upload-box" onclick="document.getElementById('csv-input').click()">
+                        <div class="upload-icon">📄</div>
+                        <div class="upload-label">Upload CSV File</div>
+                        <div class="upload-hint">Click to browse or drag and drop</div>
+                        <input type="file" id="csv-input" class="file-input" accept=".csv" onchange="handleFileSelect(event, 'csv')">
+                        <div class="file-info" id="csv-info">
+                            <div>File: <span class="file-name" id="csv-name"></span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PDF Upload Section -->
+            <div class="upload-section">
+                <h2 class="section-title">PDF Schedule Files</h2>
+                <div class="upload-grid">
+                    <div class="upload-box" id="kemps-upload-box" onclick="document.getElementById('kemps-input').click()">
+                        <div class="upload-icon">📑</div>
+                        <div class="upload-label">Kemps Corner Schedule</div>
+                        <div class="upload-hint">Upload PDF or HTML file</div>
+                        <input type="file" id="kemps-input" class="file-input" accept=".pdf,.html" onchange="handleFileSelect(event, 'kemps')">
+                        <div class="file-info" id="kemps-info">
+                            <div>File: <span class="file-name" id="kemps-name"></span></div>
+                        </div>
+                    </div>
+
+                    <div class="upload-box" id="bandra-upload-box" onclick="document.getElementById('bandra-input').click()">
+                        <div class="upload-icon">📑</div>
+                        <div class="upload-label">Bandra Schedule</div>
+                        <div class="upload-hint">Upload PDF or HTML file</div>
+                        <input type="file" id="bandra-input" class="file-input" accept=".pdf,.html" onchange="handleFileSelect(event, 'bandra')">
+                        <div class="file-info" id="bandra-info">
+                            <div>File: <span class="file-name" id="bandra-name"></span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="button-group">
+                <button class="btn btn-secondary" onclick="resetForm()">
+                    <span>🔄</span>
+                    <span>Reset</span>
+                </button>
+                <button class="btn btn-primary" id="validate-btn" onclick="validateSchedules()" disabled>
+                    <span>✓</span>
+                    <span>Validate Schedules</span>
+                </button>
+            </div>
+
+            <!-- Loading Indicator -->
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Analyzing schedules and comparing data...</p>
+            </div>
+
+            <!-- Results Section -->
+            <div class="results-section" id="results">
+                <h2 class="section-title">Validation Results</h2>
+                
+                <div class="summary-card">
+                    <h3 style="font-size: 20px; margin-bottom: 10px;">Summary</h3>
+                    <div class="summary-stats">
+                        <div class="stat-item">
+                            <div class="stat-value" id="total-classes">0</div>
+                            <div class="stat-label">Total Classes</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="matched-classes">0</div>
+                            <div class="stat-label">Matched</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="discrepancy-count">0</div>
+                            <div class="stat-label">Discrepancies</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="accuracy-rate">0%</div>
+                            <div class="stat-label">Accuracy</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="view-tabs">
+                    <button class="tab-button active" onclick="switchTab('all')">
+                        📋 All Classes
+                    </button>
+                    <button class="tab-button" onclick="switchTab('discrepancies')">
+                        ⚠️ Discrepancies Only
+                    </button>
+                </div>
+
+                <div class="tab-content active" id="tab-all">
+                    <div class="discrepancies-list" id="all-comparisons-list">
+                        <!-- All comparisons will be inserted here -->
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tab-discrepancies">
+                    <div class="discrepancies-list" id="discrepancies-list">
+                        <!-- Discrepancies will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        // Configure PDF.js worker
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+
+        // Store uploaded files
+        const uploadedFiles = {
+            csv: null,
+            kemps: null,
+            bandra: null
+        };
+
+        // Handle file selection
+        function handleFileSelect(event, type) {
+            const file = event.target.files[0];
+            if (file) {
+                uploadedFiles[type] = file;
+                updateFileInfo(type, file.name);
+                updateValidateButton();
+            }
+        }
+
+        // Update file info display
+        function updateFileInfo(type, fileName) {
+            const box = document.getElementById(`${type}-upload-box`);
+            const info = document.getElementById(`${type}-info`);
+            const nameSpan = document.getElementById(`${type}-name`);
+
+            box.classList.add('has-file');
+            info.classList.add('show');
+            nameSpan.textContent = fileName;
+        }
+
+        // Enable/disable validate button
+        function updateValidateButton() {
+            const btn = document.getElementById('validate-btn');
+            const hasCSV = uploadedFiles.csv !== null;
+            const hasPDF = uploadedFiles.kemps !== null || uploadedFiles.bandra !== null;
+            
+            btn.disabled = !(hasCSV && hasPDF);
+        }
+
+        // Reset form
+        function resetForm() {
+            uploadedFiles.csv = null;
+            uploadedFiles.kemps = null;
+            uploadedFiles.bandra = null;
+
+            document.getElementById('csv-input').value = '';
+            document.getElementById('kemps-input').value = '';
+            document.getElementById('bandra-input').value = '';
+
+            ['csv', 'kemps', 'bandra'].forEach(type => {
+                document.getElementById(`${type}-upload-box`).classList.remove('has-file');
+                document.getElementById(`${type}-info`).classList.remove('show');
+            });
+
+            document.getElementById('results').classList.remove('show');
+            updateValidateButton();
+        }
+
+        // Class name normalization
+        const CLASS_ALIASES = {
+            'STRENGTH LAB (PUSH)': ['STRENGTH LAB PUSH', 'SL PUSH', 'STRENGTH PUSH'],
+            'STRENGTH LAB (PULL)': ['STRENGTH LAB PULL', 'SL PULL', 'STRENGTH PULL'],
+            'STRENGTH LAB (FULL BODY)': ['STRENGTH LAB FULL BODY', 'SL FULL BODY', 'STRENGTH FULL BODY'],
+            'CARDIO BARRE': ['CARDIOBARRE', 'CB'],
+            'CARDIO BARRE PLUS': ['CARDIO BARRE+', 'CB PLUS', 'CB+'],
+            'CARDIO BARRE EXPRESS': ['CARDIO BARRE EXP', 'CB EXPRESS', 'CB EXP'],
+            'BARRE 57': ['BARRE57', 'B57'],
+            'MAT 57': ['MAT57', 'M57'],
+            'MAT 57 EXPRESS': ['MAT 57 EXP', 'MAT57 EXPRESS', 'M57 EXP'],
+            'POWERCYCLE': ['POWER CYCLE', 'PC'],
+            'AMPED UP!': ['AMPED UP', 'AMPED'],
+            'FIT': ['FITNESS'],
+        };
+
+        const DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
+
+        function normalizeClassName(name) {
+            if (!name) return '';
+            let normalized = name.trim().toUpperCase();
+            normalized = normalized.replace(/\s+/g, ' ');
+            
+            for (const [standard, aliases] of Object.entries(CLASS_ALIASES)) {
+                if (normalized === standard || aliases.includes(normalized)) {
+                    return standard;
+                }
+            }
+            return normalized;
+        }
+
+        function normalizeTrainerName(name) {
+            if (!name) return '';
+            return name.trim().toUpperCase().replace(/\s+/g, ' ');
+        }
+
+        function normalizeTime(time) {
+            if (!time) return '';
+            time = time.trim().toUpperCase().replace(/\s+/g, ' ');
+            
+            const patterns = [
+                /(\d{1,2}):(\d{2})\s*(AM|PM)/,
+                /(\d{1,2})\.(\d{2})\s*(AM|PM)/,
+                /(\d{1,2}):(\d{2})(AM|PM)/,
+                /(\d{1,2})\s*(AM|PM)/,
+            ];
+            
+            for (const pattern of patterns) {
+                const match = time.match(pattern);
+                if (match) {
+                    if (match.length === 4) {
+                        return `${parseInt(match[1])}:${match[2]} ${match[3]}`;
+                    } else if (match.length === 3) {
+                        return `${parseInt(match[1])}:00 ${match[2]}`;
+                    }
+                }
+            }
+            return time;
+        }
+
+        // Parse CSV file using Papa Parse
+        async function parseCSV(file) {
+            return new Promise((resolve, reject) => {
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: (results) => {
+                        const data = {};
+                        console.log('[CSV] Total rows:', results.data.length);
+                        
+                        results.data.forEach((row, index) => {
+                            const location = (row.Location || '').trim().toUpperCase();
+                            const day = (row.Day || '').trim().toUpperCase();
+                            const time = normalizeTime(row.Time || '');
+                            const className = normalizeClassName(row.Class || '');
+                            const trainer = normalizeTrainerName(row['Cover Trainer'] || row.Trainer || '');
+                            
+                            if (!location || !day || !time || !className || !trainer) {
+                                console.log(`[CSV] Skipping row ${index}: missing data`, {location, day, time, className, trainer});
+                                return;
+                            }
+                            
+                            const key = `${location}|${day}|${time}`;
+                            
+                            if (!data[location]) data[location] = {};
+                            if (!data[location][key]) data[location][key] = [];
+                            
+                            data[location][key].push({
+                                day, time, class: className, trainer
+                            });
+                        });
+                        
+                        console.log('[CSV] Parsed locations:', Object.keys(data));
+                        Object.keys(data).forEach(loc => {
+                            console.log(`[CSV] ${loc}: ${Object.keys(data[loc]).length} time slots`);
+                        });
+                        
+                        resolve(data);
+                    },
+                    error: (error) => reject(error)
+                });
+            });
+        }
+
+        // Parse HTML file
+        async function parseHTML(file, location) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const html = e.target.result;
+                    const data = {};
+                    data[location] = {};
+                    
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    
+                    let currentDay = null;
+                    let classCount = 0;
+                    
+                    // Find all text spans
+                    const spans = Array.from(doc.querySelectorAll('span'));
+                    console.log(`[HTML ${location}] Total spans:`, spans.length);
+                    
+                    for (let index = 0; index < spans.length; index++) {
+                        const span = spans[index];
+                        const text = span.textContent.trim();
+                        
+                        // Check for day headers (look for exact day names)
+                        const dayMatch = DAYS.find(day => text.toUpperCase() === day || text.toUpperCase() === day + ' ');
+                        if (dayMatch) {
+                            currentDay = dayMatch;
+                            console.log(`[HTML ${location}] Found day:`, dayMatch);
+                            continue;
+                        }
+                        
+                        if (!currentDay) continue;
+                        
+                        // Check for time entries - look for class s23 or s9 (time spans)
+                        const className = span.className || '';
+                        if (className.includes('s23') || className.includes('s9')) {
+                            const timeMatch = text.match(/^(\d{1,2}:\d{2}\s*(?:AM|PM))$/i);
+                            if (timeMatch) {
+                                const time = normalizeTime(timeMatch[1]);
+                                
+                                // Look for class info in the VERY NEXT span
+                                if (index + 1 < spans.length) {
+                                    const nextSpan = spans[index + 1];
+                                    const nextText = nextSpan.textContent.trim();
+                                    
+                                    // Check if it contains " - " separator
+                                    if (nextText.includes(' - ')) {
+                                        // Split by first " - " occurrence
+                                        const dashIndex = nextText.indexOf(' - ');
+                                        const classNameRaw = nextText.substring(0, dashIndex);
+                                        const trainerRaw = nextText.substring(dashIndex + 3);
+                                        
+                                        const normalizedClass = normalizeClassName(classNameRaw);
+                                        const normalizedTrainer = normalizeTrainerName(trainerRaw);
+                                        
+                                        if (normalizedClass && normalizedTrainer) {
+                                            const key = `${location}|${currentDay}|${time}`;
+                                            if (!data[location][key]) data[location][key] = [];
+                                            
+                                            data[location][key].push({
+                                                day: currentDay,
+                                                time,
+                                                class: normalizedClass,
+                                                trainer: normalizedTrainer
+                                            });
+                                            classCount++;
+                                            console.log(`[HTML ${location}] ${currentDay} ${time}: ${normalizedClass} - ${normalizedTrainer}`);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    console.log(`[HTML ${location}] Parsed ${classCount} classes`);
+                    resolve(data);
+                };
+                reader.readAsText(file);
+            });
+        }
+
+        // Parse PDF file using PDF.js
+        async function parsePDF(file, location) {
+            return new Promise(async (resolve) => {
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    
+                    const data = {};
+                    data[location] = {};
+                    let currentDay = null;
+                    let classCount = 0;
+                    
+                    console.log(`[PDF ${location}] Pages:`, pdf.numPages);
+                    
+                    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                        const page = await pdf.getPage(pageNum);
+                        const textContent = await page.getTextContent();
+                        
+                        textContent.items.forEach((item, index) => {
+                            const text = item.str.trim();
+                            
+                            // Check for day headers
+                            for (const day of DAYS) {
+                                if (text.toUpperCase() === day) {
+                                    currentDay = day;
+                                    console.log(`[PDF ${location}] Found day:`, day);
+                                    return;
+                                }
+                            }
+                            
+                            if (!currentDay) return;
+                            
+                            // Check for time entries
+                            const timeMatch = text.match(/^(\d{1,2}:\d{2}\s*(?:AM|PM))$/i);
+                            if (timeMatch) {
+                                const time = normalizeTime(timeMatch[1]);
+                                
+                                // Look for class info in next items
+                                for (let i = index + 1; i < Math.min(index + 5, textContent.items.length); i++) {
+                                    const nextText = textContent.items[i].str.trim();
+                                    if (nextText.includes(' - ')) {
+                                        const [classNameRaw, trainerRaw] = nextText.split(' - ', 2);
+                                        const className = normalizeClassName(classNameRaw);
+                                        const trainer = normalizeTrainerName(trainerRaw);
+                                        
+                                        if (className && trainer) {
+                                            const key = `${location}|${currentDay}|${time}`;
+                                            if (!data[location][key]) data[location][key] = [];
+                                            
+                                            data[location][key].push({
+                                                day: currentDay,
+                                                time,
+                                                class: className,
+                                                trainer
+                                            });
+                                            classCount++;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    
+                    console.log(`[PDF ${location}] Parsed ${classCount} classes`);
+                    resolve(data);
+                } catch (error) {
+                    console.error(`[PDF ${location}] Error:`, error);
+                    resolve({});
+                }
+            });
+        }
+
+        // Compare schedules
+        function compareSchedules(csvData, pdfData) {
+            const allComparisons = [];
+            const discrepancies = [];
+            let matched = 0;
+            let total = 0;
+            
+            console.log('[Compare] CSV locations:', Object.keys(csvData));
+            console.log('[Compare] PDF locations:', Object.keys(pdfData));
+            
+            // Get all locations
+            const allLocations = new Set([
+                ...Object.keys(csvData),
+                ...Object.keys(pdfData)
+            ]);
+            
+            allLocations.forEach(location => {
+                const csvLoc = csvData[location] || {};
+                const pdfLoc = pdfData[location] || {};
+                
+                console.log(`[Compare ${location}] CSV keys:`, Object.keys(csvLoc).length);
+                console.log(`[Compare ${location}] PDF keys:`, Object.keys(pdfLoc).length);
+                
+                const allKeys = new Set([
+                    ...Object.keys(csvLoc),
+                    ...Object.keys(pdfLoc)
+                ]);
+                
+                Array.from(allKeys).sort().forEach(key => {
+                    const [loc, day, time] = key.split('|');
+                    const csvEntries = csvLoc[key] || [];
+                    const pdfEntries = pdfLoc[key] || [];
+                    
+                    csvEntries.forEach(csvEntry => {
+                        total++;
+                        
+                        let matchFound = false;
+                        let matchedPdfEntry = null;
+                        
+                        for (const pdfEntry of pdfEntries) {
+                            if (csvEntry.class === pdfEntry.class && 
+                                csvEntry.trainer === pdfEntry.trainer) {
+                                matched++;
+                                matchFound = true;
+                                matchedPdfEntry = pdfEntry;
+                                break;
+                            }
+                        }
+                        
+                        if (!matchedPdfEntry) {
+                            matchedPdfEntry = pdfEntries[0] || {
+                                class: 'NOT FOUND',
+                                trainer: 'NOT FOUND'
+                            };
+                        }
+                        
+                        const comparison = {
+                            location: loc,
+                            day,
+                            time,
+                            csvClass: csvEntry.class,
+                            csvTrainer: csvEntry.trainer,
+                            pdfClass: matchedPdfEntry.class,
+                            pdfTrainer: matchedPdfEntry.trainer,
+                            classMatch: csvEntry.class === matchedPdfEntry.class,
+                            trainerMatch: csvEntry.trainer === matchedPdfEntry.trainer,
+                            isMatch: matchFound
+                        };
+                        
+                        allComparisons.push(comparison);
+                        if (!matchFound) discrepancies.push(comparison);
+                    });
+                    
+                    // Check PDF-only entries
+                    pdfEntries.forEach(pdfEntry => {
+                        const exists = csvEntries.some(csv => 
+                            csv.class === pdfEntry.class && 
+                            csv.trainer === pdfEntry.trainer
+                        );
+                        
+                        if (!exists) {
+                            total++;
+                            const comparison = {
+                                location: loc,
+                                day,
+                                time,
+                                csvClass: 'NOT IN CSV',
+                                csvTrainer: 'NOT IN CSV',
+                                pdfClass: pdfEntry.class,
+                                pdfTrainer: pdfEntry.trainer,
+                                classMatch: false,
+                                trainerMatch: false,
+                                isMatch: false
+                            };
+                            allComparisons.push(comparison);
+                            discrepancies.push(comparison);
+                        }
+                    });
+                });
+            });
+            
+            console.log('[Compare] Total:', total, 'Matched:', matched);
+            
+            return {
+                totalClasses: total,
+                matchedClasses: matched,
+                discrepancies,
+                allComparisons
+            };
+        }
+
+        // Main validation function
+        async function validateSchedules() {
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            
+            loading.classList.add('show');
+            results.classList.remove('show');
+
+            try {
+                console.log('=== Starting validation ===');
+                
+                // Parse CSV
+                console.log('Parsing CSV...');
+                const csvData = await parseCSV(uploadedFiles.csv);
+                console.log('CSV data:', csvData);
+                
+                // Parse PDF/HTML files
+                const pdfData = {};
+                
+                if (uploadedFiles.kemps) {
+                    console.log('Parsing Kemps...');
+                    const fileName = uploadedFiles.kemps.name.toLowerCase();
+                    let kempsData;
+                    
+                    if (fileName.endsWith('.html')) {
+                        kempsData = await parseHTML(uploadedFiles.kemps, 'KEMPS');
+                    } else {
+                        kempsData = await parsePDF(uploadedFiles.kemps, 'KEMPS');
+                    }
+                    
+                    if (kempsData.KEMPS) {
+                        pdfData.KEMPS = kempsData.KEMPS;
+                    }
+                    console.log('Kemps data:', kempsData);
+                }
+                
+                if (uploadedFiles.bandra) {
+                    console.log('Parsing Bandra...');
+                    const fileName = uploadedFiles.bandra.name.toLowerCase();
+                    let bandraData;
+                    
+                    if (fileName.endsWith('.html')) {
+                        bandraData = await parseHTML(uploadedFiles.bandra, 'BANDRA');
+                    } else {
+                        bandraData = await parsePDF(uploadedFiles.bandra, 'BANDRA');
+                    }
+                    
+                    if (bandraData.BANDRA) {
+                        pdfData.BANDRA = bandraData.BANDRA;
+                    }
+                    console.log('Bandra data:', bandraData);
+                }
+                
+                // Compare data
+                console.log('Comparing schedules...');
+                const comparison = compareSchedules(csvData, pdfData);
+                console.log('Comparison results:', comparison);
+                
+                loading.classList.remove('show');
+                displayResults(comparison);
+            } catch (error) {
+                loading.classList.remove('show');
+                console.error('Error:', error);
+                alert('Error validating schedules: ' + error.message);
+            }
+        }
+
+        // Display validation results
+        function displayResults(data) {
+            const results = document.getElementById('results');
+            results.classList.add('show');
+
+            // Update summary stats
+            document.getElementById('total-classes').textContent = data.totalClasses;
+            document.getElementById('matched-classes').textContent = data.matchedClasses;
+            document.getElementById('discrepancy-count').textContent = data.discrepancies.length;
+            document.getElementById('accuracy-rate').textContent = 
+                Math.round((data.matchedClasses / data.totalClasses) * 100) + '%';
+
+            // Display all comparisons
+            const allListContainer = document.getElementById('all-comparisons-list');
+            
+            if (data.allComparisons && data.allComparisons.length > 0) {
+                allListContainer.innerHTML = data.allComparisons.map(item => `
+                    <div class="discrepancy-item ${item.isMatch ? 'match' : ''}">
+                        <div class="discrepancy-header">
+                            <div>
+                                <div class="discrepancy-location">${item.location}</div>
+                                <div class="discrepancy-day">${item.day}</div>
+                                <div class="discrepancy-time">${item.time}</div>
+                            </div>
+                        </div>
+                        <div class="comparison-grid">
+                            <div class="comparison-column">
+                                <h4>CSV Data</h4>
+                                <div class="comparison-value ${item.classMatch ? 'match' : 'mismatch'}">
+                                    ${item.csvClass}
+                                </div>
+                                <div class="comparison-value ${item.trainerMatch ? 'match' : 'mismatch'}">
+                                    ${item.csvTrainer}
+                                </div>
+                            </div>
+                            <div class="comparison-column">
+                                <h4>PDF Data</h4>
+                                <div class="comparison-value ${item.classMatch ? 'match' : 'mismatch'}">
+                                    ${item.pdfClass}
+                                </div>
+                                <div class="comparison-value ${item.trainerMatch ? 'match' : 'mismatch'}">
+                                    ${item.pdfTrainer}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                allListContainer.innerHTML = `
+                    <div class="no-discrepancies">
+                        <div class="no-discrepancies-icon">📋</div>
+                        <h3>No Data</h3>
+                        <p>No comparison data available.</p>
+                    </div>
+                `;
+            }
+
+            // Display discrepancies only
+            const discrepanciesListContainer = document.getElementById('discrepancies-list');
+            
+            if (data.discrepancies.length === 0) {
+                discrepanciesListContainer.innerHTML = `
+                    <div class="no-discrepancies">
+                        <div class="no-discrepancies-icon">✓</div>
+                        <h3>Perfect Match!</h3>
+                        <p>No discrepancies found. All schedules are in sync.</p>
+                    </div>
+                `;
+            } else {
+                discrepanciesListContainer.innerHTML = data.discrepancies.map(item => `
+                    <div class="discrepancy-item">
+                        <div class="discrepancy-header">
+                            <div>
+                                <div class="discrepancy-location">${item.location}</div>
+                                <div class="discrepancy-day">${item.day}</div>
+                                <div class="discrepancy-time">${item.time}</div>
+                            </div>
+                        </div>
+                        <div class="comparison-grid">
+                            <div class="comparison-column">
+                                <h4>CSV Data</h4>
+                                <div class="comparison-value ${item.classMatch ? 'match' : 'mismatch'}">
+                                    ${item.csvClass}
+                                </div>
+                                <div class="comparison-value ${item.trainerMatch ? 'match' : 'mismatch'}">
+                                    ${item.csvTrainer}
+                                </div>
+                            </div>
+                            <div class="comparison-column">
+                                <h4>PDF Data</h4>
+                                <div class="comparison-value ${item.classMatch ? 'match' : 'mismatch'}">
+                                    ${item.pdfClass}
+                                </div>
+                                <div class="comparison-value ${item.trainerMatch ? 'match' : 'mismatch'}">
+                                    ${item.pdfTrainer}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // Switch between tabs
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById('tab-' + tabName).classList.add('active');
+        }
+
+        // Drag and drop support
+        ['csv', 'kemps', 'bandra'].forEach(type => {
+            const box = document.getElementById(`${type}-upload-box`);
+            
+            box.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                box.classList.add('dragover');
+            });
+
+            box.addEventListener('dragleave', () => {
+                box.classList.remove('dragover');
+            });
+
+            box.addEventListener('drop', (e) => {
+                e.preventDefault();
+                box.classList.remove('dragover');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    const input = document.getElementById(`${type}-input`);
+                    input.files = files;
+                    handleFileSelect({ target: input }, type);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
