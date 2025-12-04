@@ -44,6 +44,11 @@ const EMAIL_CONFIG = {
   ]
 };
 
+// Dynamic row management configuration
+// Set to true to dynamically add/remove rows based on sheet data
+// Set to false to use the existing update logic (preserves HTML row count)
+const DYNAMIC_ROW_MODE = true;
+
 /**
  * Advanced Node.js Script to Update Kemps.html with CSV Data
  * Reads class data from CSV and updates HTML in accurate positions
@@ -718,9 +723,15 @@ class ScheduleUpdater {
             themeSections.push({ type: 'Amped Up', content: ampedContent });
         }
         
-        const bandra_themes = fullContent.match(/Bandra cycle themes\s*[-–:]\s*\*?\s*(.*?)(?=\nBest,|$)/is);
+        // Match Bandra cycle themes section, stopping at common email reply markers
+        // This prevents capturing content from email replies in the thread
+        const bandra_themes = fullContent.match(/Bandra cycle themes\s*[-–:]\s*\*?\s*(.*?)(?=\n(?:Best,|Thanks\s+and\s+regards|Warm\s+Regards|Regards,|On\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)|\n--\s*\n))/is);
         if (bandra_themes) {
-            themeSections.push({ type: 'Bandra cycle', content: bandra_themes[1] });
+            // Also truncate at any line that looks like email metadata
+            let bandraContent = bandra_themes[1];
+            // Remove content after "Thanks and regards" or email signatures
+            bandraContent = bandraContent.split(/Thanks\s+and\s+regards|Warm\s+Regards|Regards,/i)[0].trim();
+            themeSections.push({ type: 'Bandra cycle', content: bandraContent });
         }
         
         // FIT Theme patterns: "FIT Theme : ALL classes of the week : SUPER SETS" or "FIT theme: All classes, all week - TABATA"
@@ -738,6 +749,19 @@ class ScheduleUpdater {
             const themes = this.parseThemesSection(section.type, section.content);
             result.themes.push(...themes);
         }
+        
+        // Deduplicate themes by creating a unique key for each theme
+        const seenThemes = new Set();
+        result.themes = result.themes.filter(theme => {
+            const key = `${theme.day}|${theme.time || ''}|${theme.theme}|${theme.classType || ''}`;
+            if (seenThemes.has(key)) {
+                return false; // Skip duplicate
+            }
+            seenThemes.add(key);
+            return true;
+        });
+        
+        console.log(`📊 After deduplication: ${result.themes.length} unique themes`);
         
         // Parse hosted classes - handle various formats like "- Hosted Classes -" or "- Hosted  Classes -"
         const hostedMatch = fullContent.match(/-\s*Hosted\s+Classes\s*-\s*(.*?)(?=\n\s*(?:Covers|Amped|Bandra|FIT|Best|Thanks)|$)/is);
@@ -1504,15 +1528,14 @@ class ScheduleUpdater {
             
             console.log('📋 Processing schedule data for cleaning...');
             console.log(`🔢 Found ${dataRows.length} data rows to process`);
-            console.log('📅 Date row (row 2):', dateRow.slice(0, 10));
             
             // Define column mappings based on your Google Apps Script
-            const locationCols = [1, 7, 13, 18, 23, 28, 34];
+            const locationCols = [1, 7, 13, 18, 23, 28, 33];
             const dayCols = locationCols;
-            const classCols = [2, 8, 14, 19, 24, 29, 35];
-            const trainer1Cols = [3, 9, 15, 20, 25, 30, 36];
-            const trainer2Cols = [4, 10, 16, 21, 26, 31, 37]; // For themes
-            const coverCols = [6, 12, 17, 22, 27, 32, 38];
+            const classCols = [2, 8, 14, 19, 24, 29, 34];
+            const trainer1Cols = [3, 9, 15, 20, 25, 30, 35];
+            const trainer2Cols = [4, 10, 16, 21, 26, 31, 36]; // For themes
+            const coverCols = [6, 12, 17, 22, 27, 32, 37];
 
             // Find time column
             const timeColIndex = headerRow.findIndex(h => 
@@ -1624,6 +1647,35 @@ class ScheduleUpdater {
                 }
             }
 
+            // Build a map of day -> date from the classes we've already processed (from sheet)
+            // This ensures hosted classes get dates consistent with the schedule week
+            const dateByDay = {};
+            for (const cls of allClasses) {
+                if (cls.Date && !dateByDay[cls.Day]) {
+                    dateByDay[cls.Day] = cls.Date;
+                }
+            }
+            console.log('📅 Date map from sheet:', dateByDay);
+
+            // Build a set of existing class keys to prevent duplicates
+            // Also build a set of SOLD OUT classes by day+time+trainer for hosted class deduplication
+            const existingClassKeys = new Set();
+            const existingSoldOutKeys = new Set();
+            
+            for (const cls of allClasses) {
+                // Normalize time for comparison (remove special chars, standardize format)
+                const normalizedTime = this.normalizeTimeForComparison(cls.Time);
+                const key = `${cls.Day}|${normalizedTime}|${this.normalizeClassName(cls.Class)}`.toLowerCase();
+                existingClassKeys.add(key);
+                
+                // For SOLD OUT classes, also track by day+time+trainer (to catch hosted variants)
+                if (cls.Notes && cls.Notes.includes('SOLD OUT')) {
+                    const soldOutKey = `${cls.Day}|${normalizedTime}|${this.normalizeTrainerName(cls.Trainer)}`.toLowerCase();
+                    existingSoldOutKeys.add(soldOutKey);
+                    console.log(`  📝 Tracking SOLD OUT: ${soldOutKey}`);
+                }
+            }
+
             // Add hosted classes from email info if available
             if (this.currentEmailInfo && this.currentEmailInfo.hostedClasses) {
                 console.log(`📋 Adding ${this.currentEmailInfo.hostedClasses.length} hosted classes from email...`);
@@ -1631,14 +1683,42 @@ class ScheduleUpdater {
                     // Normalize location to match our format
                     const normalizedLocation = this.normalizeLocationName(hosted.location);
                     
+                    // Normalize time for the hosted class
+                    const normalizedTime = this.normalizeTimeDisplay(hosted.time);
+                    const normalizedTimeForCompare = this.normalizeTimeForComparison(hosted.time);
+                    const normalizedTrainer = this.normalizeTrainerName(hosted.trainer);
+                    
+                    // Check if this class already exists by class name
+                    const hostedKey = `${hosted.day}|${normalizedTimeForCompare}|${this.normalizeClassName(hosted.classType)}`.toLowerCase();
+                    
+                    // Also check by day+time+trainer for SOLD OUT duplicates
+                    const soldOutKey = `${hosted.day}|${normalizedTimeForCompare}|${normalizedTrainer}`.toLowerCase();
+                    
+                    if (existingClassKeys.has(hostedKey)) {
+                        console.log(`  ⚠️ Skipping duplicate hosted class (class match): ${hosted.day} ${hosted.time} ${hosted.classType}`);
+                        continue;
+                    }
+                    
+                    if (existingSoldOutKeys.has(soldOutKey)) {
+                        console.log(`  ⚠️ Skipping duplicate hosted class (SOLD OUT match): ${hosted.day} ${hosted.time} ${hosted.trainer}`);
+                        continue;
+                    }
+                    
+                    // Use the date from sheet data for the same day, fall back to calculated
+                    const hostedDate = dateByDay[hosted.day] || this.getDateForDay(hosted.day);
+                    console.log(`  📅 Hosted class on ${hosted.day} using date: ${hostedDate}`);
+                    
+                    existingClassKeys.add(hostedKey);
+                    existingSoldOutKeys.add(soldOutKey);
+                    
                     allClasses.push({
                         Day: hosted.day,
-                        Time: hosted.time,
+                        Time: normalizedTime,
                         Location: normalizedLocation,
                         Class: this.normalizeClassNameForCleaned(hosted.classType),
-                        Trainer: this.normalizeTrainerName(hosted.trainer),
+                        Trainer: normalizedTrainer,
                         Notes: 'SOLD OUT',
-                        Date: this.getDateForDay(hosted.day),
+                        Date: hostedDate,
                         Theme: ''
                     });
                 }
@@ -1936,13 +2016,28 @@ class ScheduleUpdater {
     }
 
     /**
-     * Normalize time string format
+     * Normalize time string format - remove special characters, standardize format
      */
     normalizeTimeString(timeStr) {
         if (!timeStr) return '';
-        let t = timeStr.toString().trim().replace(/\s*[:,.]\s*/g, ':');
-        t = t.replace(/(\d)(AM|PM)/gi, '$1 $2').toUpperCase();
-        return t;
+        let t = timeStr.toString().trim();
+        
+        // Remove invisible/special Unicode characters
+        t = t.replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '');
+        
+        // Replace all separators (. , : etc) with :
+        t = t.replace(/[.,;]/g, ':');
+        
+        // Remove extra colons
+        t = t.replace(/:+/g, ':');
+        
+        // Ensure space between time and AM/PM
+        t = t.replace(/(\d)(AM|PM)/gi, '$1 $2');
+        
+        // Clean up multiple spaces
+        t = t.replace(/\s+/g, ' ').trim();
+        
+        return t.toUpperCase();
     }
 
     /**
@@ -1958,9 +2053,42 @@ class ScheduleUpdater {
         const minute = match[2];
         const ampm = match[3].toUpperCase();
         
-        // Format with consistent spacing: "10:00 AM" or " 8:30 AM" (space-padded for alignment)
-        const paddedHour = hour < 10 ? ` ${hour}` : `${hour}`;
+        // Format with consistent spacing: "HH:MM AM" (2-digit hour, no leading space)
+        const paddedHour = hour.toString().padStart(2, '0');
         return `${paddedHour}:${minute} ${ampm}`;
+    }
+
+    /**
+     * Normalize time for comparison (strip all formatting, just get HH:MM AM/PM)
+     * Used to detect duplicate classes with different time formats (8.45 am vs 8:45 AM)
+     */
+    normalizeTimeForComparison(timeStr) {
+        if (!timeStr) return '';
+        
+        // Remove all special characters except digits and letters
+        let t = timeStr.toString().trim();
+        
+        // Replace . , : with : for consistent parsing
+        t = t.replace(/[.,]/g, ':');
+        
+        // Remove extra spaces
+        t = t.replace(/\s+/g, ' ').trim();
+        
+        // Extract time components
+        const match = t.match(/(\d{1,2}):?(\d{2})?\s*(am|pm)?/i);
+        if (!match) return t.toLowerCase();
+        
+        let hour = parseInt(match[1]);
+        const minute = match[2] ? parseInt(match[2]) : 0;
+        let ampm = (match[3] || '').toLowerCase();
+        
+        // If no AM/PM specified, try to infer from hour
+        if (!ampm) {
+            ampm = hour >= 7 && hour < 12 ? 'am' : 'pm';
+        }
+        
+        // Return standardized format for comparison: "h:mm am" (no padding)
+        return `${hour}:${minute.toString().padStart(2, '0')} ${ampm}`;
     }
 
     /**
@@ -2220,11 +2348,11 @@ class ScheduleUpdater {
                     let coverCol = -1;
                     
                     // Column mappings must match cleanAndPopulateCleanedSheet exactly:
-                    // locationCols = [1, 7, 13, 18, 23, 28, 34];
-                    // classCols = [2, 8, 14, 19, 24, 29, 35];
-                    // trainer1Cols = [3, 9, 15, 20, 25, 30, 36];
-                    // trainer2Cols = [4, 10, 16, 21, 26, 31, 37]; // For themes
-                    // coverCols = [6, 12, 17, 22, 27, 32, 38];
+                    // locationCols = [1, 7, 13, 18, 23, 28, 33];
+                    // classCols = [2, 8, 14, 19, 24, 29, 34];
+                    // trainer1Cols = [3, 9, 15, 20, 25, 30, 35];
+                    // trainer2Cols = [4, 10, 16, 21, 26, 31, 36]; // For themes
+                    // coverCols = [6, 12, 17, 22, 27, 32, 37];
                     
                     if (day === 'Monday' && colIndex === 1) {
                         locationCol = 1; classCol = 2; trainer1Col = 3; trainer2Col = 4; coverCol = 6;
@@ -2238,8 +2366,8 @@ class ScheduleUpdater {
                         locationCol = 23; classCol = 24; trainer1Col = 25; trainer2Col = 26; coverCol = 27;
                     } else if (day === 'Saturday' && colIndex === 28) {
                         locationCol = 28; classCol = 29; trainer1Col = 30; trainer2Col = 31; coverCol = 32;
-                    } else if (day === 'Sunday' && colIndex === 34) {
-                        locationCol = 34; classCol = 35; trainer1Col = 36; trainer2Col = 37; coverCol = 38;
+                    } else if (day === 'Sunday' && colIndex === 33) {
+                        locationCol = 33; classCol = 34; trainer1Col = 35; trainer2Col = 36; coverCol = 37;
                     } else {
                         // Fallback: search for headers if the pattern doesn't match
                         for (let searchCol = colIndex - 6; searchCol <= colIndex + 6; searchCol++) {
@@ -2937,6 +3065,9 @@ class ScheduleUpdater {
         // Replace comma with colon and trim
         let normalized = time.replace(',', ':').trim();
         
+        // Remove space before colon (e.g., "10 :00 AM" -> "10:00 AM")
+        normalized = normalized.replace(/\s+:/, ':');
+        
         // Ensure space before AM/PM
         normalized = normalized.replace(/([0-9])(AM|PM)/i, '$1 $2');
         
@@ -3081,9 +3212,11 @@ class ScheduleUpdater {
         let cleanTheme = theme.trim().toUpperCase();
         
         // Standardized background colors with improved contrast
+        // For Kemps: Much darker purple/indigo gradient for better visibility
+        // For Bandra: Green gradient
         const bgColor = location.toLowerCase().includes('bandra') ? 
             'linear-gradient(135deg, #022c22 0%, #064e3b 50%, #065f46 100%)' : 
-            'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+            'linear-gradient(135deg, #2d1b69 0%, #1a0f3d 100%)';
         
         // Use consistent ⚡️ icon for all badges
         const icon = '⚡️';
@@ -3204,6 +3337,352 @@ class ScheduleUpdater {
         const isLongText = text.length > 30 && !text.includes('-');
         
         return looksLikeDate || (isLongText && text.includes(':'));
+    }
+
+    /**
+     * DYNAMIC ROW MANAGEMENT: Adds/removes rows based on sheet data
+     * This method replaces the static update approach with a data-driven approach
+     * where the number of rows per day matches exactly what's in the sheet.
+     */
+    dynamicUpdatePositionedSpans() {
+        console.log('🔄 DYNAMIC UPDATE: Rebuilding schedule rows from sheet data...');
+        const scheduleByDay = this.organizeScheduleByDay();
+
+        // Configuration for row spacing and positioning
+        const ROW_HEIGHT = 25; // pixels between rows (vertical spacing)
+        const TIME_CLASS_OFFSET = 86; // horizontal offset from time to class span
+        
+        // Day header configuration - maps day names to their column positions
+        const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        const dayHeaderPattern = /^(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)\s*$/i;
+
+        // Helper to determine which page a span is on
+        const getPageForSpan = ($span) => {
+            const $section = $span.closest('section.page');
+            if ($section.length > 0) {
+                const ariaLabel = $section.attr('aria-label') || '';
+                if (ariaLabel.includes('Page 2')) return 2;
+                if (ariaLabel.includes('Page 1')) return 1;
+            }
+            if ($span.closest('[id*="pg2"]').length > 0) return 2;
+            if ($span.closest('[id*="pg1"]').length > 0) return 1;
+            return 1;
+        };
+
+        // Build a list of all day header spans with their positions
+        const dayHeaders = [];
+        this.$('span').each((_i, elem) => {
+            const $span = this.$(elem);
+            const text = $span.text().trim();
+            if (dayHeaderPattern.test(text)) {
+                const style = $span.attr('style') || '';
+                const leftMatch = style.match(/left:\s*([\d.]+)px/);
+                const bottomMatch = style.match(/bottom:\s*([\d.]+)px/);
+                const left = leftMatch ? parseFloat(leftMatch[1]) : 0;
+                const bottom = bottomMatch ? parseFloat(bottomMatch[1]) : 0;
+                const dayName = text.trim().charAt(0).toUpperCase() + text.trim().slice(1).toLowerCase();
+                const page = getPageForSpan($span);
+                const $container = $span.closest('section.page, [id^="pg"]');
+                dayHeaders.push({ elem, $span, text: dayName, left, bottom, page, $container });
+            }
+        });
+
+        console.log(`📅 Found ${dayHeaders.length} day headers`);
+        dayHeaders.forEach(dh => {
+            console.log(`  - ${dh.text}: left=${dh.left}px, bottom=${dh.bottom}px, page=${dh.page}`);
+        });
+
+        // For each day, find and remove all existing time/class spans, then regenerate
+        let totalAdded = 0;
+        let totalRemoved = 0;
+
+        for (const dayHeader of dayHeaders) {
+            const dayName = dayHeader.text;
+            const classesForDay = scheduleByDay[dayName] || [];
+            
+            console.log(`\n📆 Processing ${dayName}: ${classesForDay.length} classes in sheet`);
+
+            // Find all existing time spans for this day column
+            // Time spans are within ~100px of the day header's left position
+            const dayLeft = dayHeader.left;
+            const dayBottom = dayHeader.bottom;
+            const dayPage = dayHeader.page;
+            const $dayContainer = dayHeader.$container;
+
+            // Collect all time spans in this day's column
+            const existingTimeSpans = [];
+            this.$('span').each((_i, elem) => {
+                const $span = this.$(elem);
+                const text = $span.text().trim();
+                
+                // Check if it's a time span
+                if (!/^\d{1,2}:\d{2}\s*(?:AM|PM)?$/i.test(text)) return;
+                
+                const style = $span.attr('style') || '';
+                const leftMatch = style.match(/left:\s*([\d.]+)px/);
+                const bottomMatch = style.match(/bottom:\s*([\d.]+)px/);
+                const spanLeft = leftMatch ? parseFloat(leftMatch[1]) : 0;
+                const spanBottom = bottomMatch ? parseFloat(bottomMatch[1]) : 0;
+                const spanPage = getPageForSpan($span);
+
+                // Must be on same page and in same column (within 20px tolerance for time spans)
+                // Time spans are typically slightly to the left of day headers
+                if (spanPage !== dayPage) return;
+                if (Math.abs(spanLeft - dayLeft) > 30) return;
+                
+                // Must be below the day header (lower bottom value)
+                if (spanBottom >= dayBottom) return;
+
+                existingTimeSpans.push({
+                    $span,
+                    left: spanLeft,
+                    bottom: spanBottom,
+                    text
+                });
+            });
+
+            // Sort by bottom position (highest first = top of column)
+            existingTimeSpans.sort((a, b) => b.bottom - a.bottom);
+
+            console.log(`  Found ${existingTimeSpans.length} existing time spans in HTML`);
+
+            // Calculate the starting position for new rows
+            // Use the highest existing time span position, or calculate from day header
+            let startBottom;
+            if (existingTimeSpans.length > 0) {
+                startBottom = existingTimeSpans[0].bottom;
+            } else {
+                // Start below the day header with reduced spacing
+                startBottom = dayBottom - 40; // Reduced offset from header to first class (was 60)
+            }
+
+            // Find the class spans associated with each time span and remove them
+            const spansToRemove = new Set();
+            
+            for (const timeData of existingTimeSpans) {
+                const $timeSpan = timeData.$span;
+                spansToRemove.add($timeSpan[0]);
+
+                // Find associated class/trainer span(s) - typically immediately after the time span
+                let current = $timeSpan[0].nextSibling;
+                while (current) {
+                    if (current.type === 'tag' && current.name === 'span') {
+                        const $currentSpan = this.$(current);
+                        const currentText = $currentSpan.text().trim();
+                        
+                        // Stop at next time span
+                        if (/^\d{1,2}:\d{2}\s*(?:AM|PM)?$/i.test(currentText)) break;
+                        
+                        // Stop at header elements
+                        if (this.isHeaderElement($currentSpan)) break;
+
+                        // Get position to verify it's in the same row
+                        const currentStyle = $currentSpan.attr('style') || '';
+                        const currentBottomMatch = currentStyle.match(/bottom:\s*([\d.]+)px/);
+                        const currentBottom = currentBottomMatch ? parseFloat(currentBottomMatch[1]) : 0;
+
+                        // If within same row (5px tolerance), mark for removal
+                        if (Math.abs(currentBottom - timeData.bottom) <= 5) {
+                            spansToRemove.add(current);
+                        } else {
+                            // Different row, stop scanning
+                            break;
+                        }
+                    }
+                    current = current.nextSibling;
+                }
+            }
+
+            // Also remove any orphaned class/trainer spans at the same position
+            // These might be left over from incomplete removals
+            const timePositions = new Map();
+            existingTimeSpans.forEach(td => {
+                if (!timePositions.has(td.bottom)) {
+                    timePositions.set(td.bottom, []);
+                }
+                timePositions.get(td.bottom).push(td);
+            });
+
+            this.$('span').each((_i, elem) => {
+                const $span = this.$(elem);
+                const style = $span.attr('style') || '';
+                const leftMatch = style.match(/left:\s*([\d.]+)px/);
+                const bottomMatch = style.match(/bottom:\s*([\d.]+)px/);
+                const left = leftMatch ? parseFloat(leftMatch[1]) : 0;
+                const bottom = bottomMatch ? parseFloat(bottomMatch[1]) : 0;
+                const text = $span.text().trim();
+                
+                // Check if this is a class/trainer span (not a time span, not already marked)
+                if (!spansToRemove.has(elem) && 
+                    !/^\d{1,2}:\d{2}\s*(?:AM|PM)?$/i.test(text) &&
+                    !this.isHeaderElement($span)) {
+                    
+                    // If there's a time span at this bottom position, and this span is at the class offset position
+                    if (timePositions.has(bottom) && Math.abs(left - dayLeft - TIME_CLASS_OFFSET) <= 5) {
+                        spansToRemove.add(elem);
+                    }
+                }
+            });
+
+            // Remove all marked spans
+            const removedCount = spansToRemove.size;
+            spansToRemove.forEach(elem => {
+                this.$(elem).remove();
+            });
+            totalRemoved += removedCount;
+            console.log(`  Removed ${removedCount} existing spans`);
+
+            // Now generate new spans for each class in the sheet
+            if (classesForDay.length === 0) {
+                console.log(`  No classes for ${dayName}, skipping generation`);
+                continue;
+            }
+
+            // Sort classes by time for proper ordering
+            const sortedClasses = [...classesForDay].sort((a, b) => {
+                const timeA = this.parseTimeToMinutes(a.time);
+                const timeB = this.parseTimeToMinutes(b.time);
+                return timeA - timeB;
+            });
+
+            // Find the annotation container or content container to insert new spans
+            // Instead of trying to append to a container, insert directly after the day header
+            // This ensures the spans appear in the right location in the final HTML
+            const $dayHeader = dayHeader.$span;
+
+            // Generate new time and class spans for each class
+            let currentBottom = startBottom;
+            let lastInsertedElement = $dayHeader[0];
+            
+            for (let i = 0; i < sortedClasses.length; i++) {
+                const classData = sortedClasses[i];
+                const rawTime = classData.time;
+                // Normalize time: remove extra spaces, special characters
+                const time = this.normalizeTime(rawTime).replace(/\s+/g, ' ').trim();
+                const className = this.formatClassName(this.normalizeClassName(classData.class)).replace(/^STUDIO\s+/i, '');
+                const trainerName = this.getTrainerFirstName(classData.trainer).toUpperCase();
+                const theme = classData.theme || '';
+                const isSoldOut = classData.notes && classData.notes.includes('SOLD OUT');
+
+                // Create time span with normalized time
+                const timeSpanHtml = `<span class="t s9" style="left:${dayLeft}px;bottom:${currentBottom}px;">${time}</span>`;
+                
+                // Create class/trainer span
+                let classText = className;
+                if (trainerName) {
+                    classText += ` - ${trainerName}`;
+                }
+                
+                // Build badge HTML
+                let badgeHtml = '';
+                if (theme && theme.trim()) {
+                    badgeHtml += this.createThemeBadge(theme.trim(), this.currentLocation);
+                }
+                if (isSoldOut) {
+                    badgeHtml += ' <span class="sold-out-badge" style="background-color: #dc143c; color: white; padding: 4px 10px; border-radius: 4px; font-size: 10px; font-weight: 700; display: inline-block; margin-left: 8px; position: relative; z-index: 20;">SOLD OUT</span>';
+                }
+
+                const classLeft = dayLeft + TIME_CLASS_OFFSET;
+                // Create red strikethrough line for sold out classes that covers the time and class name (but not the badge)
+                let strikethroughHtml = '';
+                if (isSoldOut) {
+                    // Line width: covers from time to just before the badge (approximately 220px)
+                    strikethroughHtml = `<span class="sold-out-line" style="position: absolute; left:${dayLeft}px; bottom:${currentBottom + 8}px; width: 220px; height: 2px; background-color: #dc143c; z-index: 10;"></span>`;
+                }
+                
+                const classSpanHtml = `<span class="t v0 s5" style="left:${classLeft}px;bottom:${currentBottom}px;font-family:Montserrat,sans-serif;font-weight:400;color:#1a1a1a;">${classText}${badgeHtml}</span>`;
+
+                // Parse and insert time span
+                const timeSpan = this.$(timeSpanHtml);
+                this.$(lastInsertedElement).after(timeSpan);
+                lastInsertedElement = timeSpan[0];
+                
+                // Insert red strikethrough line if sold out (before class span so it appears behind)
+                if (isSoldOut) {
+                    const strikethroughSpan = this.$(strikethroughHtml);
+                    this.$(lastInsertedElement).after(strikethroughSpan);
+                    lastInsertedElement = strikethroughSpan[0];
+                }
+                
+                // Parse and insert class span
+                const classSpan = this.$(classSpanHtml);
+                this.$(lastInsertedElement).after(classSpan);
+                lastInsertedElement = classSpan[0];
+
+                totalAdded += 2;
+
+                // Move to next row
+                currentBottom -= ROW_HEIGHT;
+            }
+
+            console.log(`  Generated ${sortedClasses.length * 2} new spans for ${sortedClasses.length} classes`);
+        }
+
+        console.log(`\n✅ DYNAMIC UPDATE COMPLETE:`);
+        console.log(`   - Removed: ${totalRemoved} old spans`);
+        console.log(`   - Added: ${totalAdded} new spans`);
+
+        // Clean up any remaining malformed times in the HTML
+        this.cleanupMalformedTimes();
+
+        // Post-processing
+        this.normalizeAllContentSpans();
+    }
+
+    /**
+     * OLD METHOD: Generate new time and class spans for each class
+     * (Kept for reference - not actively used)
+     */
+    generateNewSpansOLD() {
+        // This old code is deprecated
+        return;
+    }
+
+    /**
+     * Clean up any remaining malformed times in the HTML
+     * Removes spans that contain malformed times like "10 :00 AM" (space before colon)
+     */
+    cleanupMalformedTimes() {
+        console.log('🧹 Cleaning up malformed times from HTML...');
+        const malformedPattern = /\d{1,2}\s+:\d{2}\s*(AM|PM)/i;
+        let removedCount = 0;
+
+        this.$('span').each((_i, elem) => {
+            const $span = this.$(elem);
+            const text = $span.text().trim();
+            
+            // Check if this is a malformed time span (has space before colon)
+            if (malformedPattern.test(text) && /^\d{1,2}\s+:\d{2}\s*(AM|PM)$/.test(text)) {
+                // Only remove if it's exactly a time span (not mixed with other text)
+                $span.remove();
+                removedCount++;
+            }
+        });
+        
+        if (removedCount > 0) {
+            console.log(`  ✓ Removed ${removedCount} malformed time spans`);
+        } else {
+            console.log('  ✓ No malformed times found');
+        }
+    }
+
+    /**
+     * Parse time string to minutes since midnight for sorting
+     */
+    parseTimeToMinutes(timeStr) {
+        if (!timeStr) return 0;
+        const normalized = this.normalizeTime(timeStr);
+        const match = normalized.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (!match) return 0;
+        
+        let hours = parseInt(match[1], 10);
+        const minutes = parseInt(match[2], 10);
+        const period = match[3].toUpperCase();
+        
+        if (period === 'PM' && hours !== 12) hours += 12;
+        if (period === 'AM' && hours === 12) hours = 0;
+        
+        return hours * 60 + minutes;
     }
 
     /**
@@ -4018,7 +4497,13 @@ class ScheduleUpdater {
             const customImagePath = path.join(__dirname, 'Bandra.png');
             this.replaceBackgroundImage(customImagePath);
             
-            this.updatePositionedSpans();
+            // Use dynamic or static update based on configuration
+            if (DYNAMIC_ROW_MODE) {
+                console.log('📊 DYNAMIC_ROW_MODE enabled: Rows will be added/removed based on sheet data');
+                this.dynamicUpdatePositionedSpans();
+            } else {
+                this.updatePositionedSpans();
+            }
             this.updateScheduleEntries();
             this.updateDateHeaders();
             this.save();
@@ -4468,7 +4953,13 @@ class ScheduleUpdater {
             const customImagePath = path.join(__dirname, `${this.locationName}.png`);
             this.replaceBackgroundImage(customImagePath);
             
-            this.updatePositionedSpans();
+            // Use dynamic or static update based on configuration
+            if (DYNAMIC_ROW_MODE) {
+                console.log('📊 DYNAMIC_ROW_MODE enabled: Rows will be added/removed based on sheet data');
+                this.dynamicUpdatePositionedSpans();
+            } else {
+                this.updatePositionedSpans();
+            }
             this.updateScheduleEntries();
             this.updateDateHeaders();
             this.save();
@@ -5390,9 +5881,13 @@ class ScheduleUpdater {
 
 // Main execution
 if (require.main === module) {
-    // No CSV path needed - everything reads from Google Sheets
-    const htmlPath = path.join(__dirname, 'Kemps.html');
+    // Read from backup (clean template) and write to Kemps.html
+    const backupPath = path.join(__dirname, 'Kemps.backup.html');
+    const htmlPath = fs.existsSync(backupPath) ? backupPath : path.join(__dirname, 'Kemps.html');
     const outputPath = path.join(__dirname, 'Kemps.html');
+    
+    console.log(`📄 Source file: ${path.basename(htmlPath)}`);
+    console.log(`📄 Output file: ${path.basename(outputPath)}`);
 
     const updater = new ScheduleUpdater(htmlPath, outputPath); // No CSV needed
     
