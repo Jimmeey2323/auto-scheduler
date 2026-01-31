@@ -1,5 +1,5 @@
-const { google } = require('googleapis');
-const path = require('path');
+import { google } from 'googleapis';
+import path from 'path';
 
 async function debugTuesday() {
     const auth = new google.auth.GoogleAuth({

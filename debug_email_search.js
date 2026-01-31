@@ -1,5 +1,5 @@
 // Debug script to test email search
-const ScheduleUpdater = require('./updateKempsSchedule.js');
+import ScheduleUpdater from './updateKempsSchedule.js';
 
 async function debugEmailSearch() {
     const updater = new ScheduleUpdater('Kemps.html', 'Kemps.html', 'kemps');
@@ -11,7 +11,7 @@ async function debugEmailSearch() {
         const accessToken = await updater.getAccessToken();
         console.log('✅ Got access token\n');
         
-        const { google } = require('googleapis');
+        import { google } from 'googleapis';
         const oauth2Client = new google.auth.OAuth2();
         oauth2Client.setCredentials({ access_token: accessToken });
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });

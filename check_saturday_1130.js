@@ -1,5 +1,5 @@
-require('dotenv').config();
-const { google } = require('googleapis');
+import 'dotenv/config';
+import { google } from 'googleapis';
 
 async function checkSaturday1130() {
   const accessToken = process.env.GOOGLE_ACCESS_TOKEN;

@@ -1,5 +1,5 @@
-const ScheduleUpdater = require('./updateKempsSchedule.js');
-const path = require('path');
+import ScheduleUpdater from './updateKempsSchedule.js';
+import path from 'path';
 
 (async () => {
   const updater = new ScheduleUpdater(path.join(__dirname, 'Kemps.html'), path.join(__dirname, 'Kemps.html'));

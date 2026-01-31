@@ -1,4 +1,4 @@
-const ScheduleUpdater = require('./updateKempsSchedule.js');
+import ScheduleUpdater from './updateKempsSchedule.js';
 
 async function debugHosted() {
   const updater = new ScheduleUpdater('./Kemps.html', './Kemps.html', 'kemps');

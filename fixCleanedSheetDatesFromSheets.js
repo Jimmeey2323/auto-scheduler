@@ -1,7 +1,7 @@
-const fs = require('fs');
-const { parse } = require('csv-parse/sync');
-const path = require('path');
-const ScheduleUpdater = require('./updateKempsSchedule.js');
+import fs from 'fs';
+import { parse } from 'csv-parse/sync';
+import path from 'path';
+import ScheduleUpdater from './updateKempsSchedule.js';
 
 /**
  * Fix the cleaned sheet to populate proper dates starting from the first date found in Google Sheets
@@ -146,8 +146,8 @@ class DatePopulatorFromSheets {
      */
     async getRawSheetData() {
         try {
-            const { google } = require('googleapis');
-            const fs = require('fs');
+            import { google } from 'googleapis';
+            import fs from 'fs';
             
             // Same config as ScheduleUpdater
             const GOOGLE_CONFIG = {
@@ -293,4 +293,4 @@ if (require.main === module) {
         });
 }
 
-module.exports = DatePopulatorFromSheets;
+export default DatePopulatorFromSheets;

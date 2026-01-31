@@ -1,12 +1,13 @@
-const fs = require('fs');
-const path = require('path');
-const { parse } = require('csv-parse/sync');
-const cheerio = require('cheerio');
-const puppeteer = require('puppeteer');
-const { google } = require('googleapis');
-const axios = require('axios');
-const { PDFDocument } = require('pdf-lib');
-require('dotenv').config();
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { parse } from 'csv-parse/sync';
+import cheerio from 'cheerio';
+import puppeteer from 'puppeteer';
+import { google } from 'googleapis';
+import axios from 'axios';
+import { PDFDocument } from 'pdf-lib';
+import 'dotenv/config';
 
 // Google OAuth Configuration
 const GOOGLE_CONFIG = {
@@ -3159,16 +3160,27 @@ class ScheduleUpdater {
 
         let themeDebugCount = 0;
         this.kwalityClasses.forEach(classData => {
-            const day = classData.Day;
+            // Normalize day value to Title Case keys used in scheduleByDay
+            const rawDay = String(classData.Day || classData.day || classData.DayName || '').trim();
+            if (!rawDay) return; // skip records without day
+            const day = rawDay.length <= 3 ? this.expandDayName(rawDay) : (rawDay.charAt(0).toUpperCase() + rawDay.slice(1).toLowerCase());
             if (scheduleByDay[day]) {
-                // Check for theme data in various possible column names
+                // Check for theme data in various possible column names (be more permissive)
                 let theme = classData.Theme || classData.theme || classData['Theme Name'] || 
                            classData['theme_name'] || classData['Class Theme'] || 
-                           classData['class_theme'] || classData.H || classData['Column H'] || '';
+                           classData['class_theme'] || classData.Themes || classData['Theme(s)'] ||
+                           classData.H || classData['Column H'] || classData['Column G'] || '';
                 
                 // If no theme found in data, apply known theme patterns
                 if (!theme || !theme.trim()) {
-                    theme = this.getThemeForClass(classData);
+                    // Try to extract inline theme info from Notes or other free-text fields
+                    const notesField = String(classData.Notes || classData.notes || classData.Note || '').trim();
+                    const notesThemeMatch = notesField.match(/theme\s*[:\-]\s*(.+)$/i);
+                    if (notesThemeMatch) {
+                        theme = notesThemeMatch[1].trim();
+                    } else {
+                        theme = this.getThemeForClass(classData);
+                    }
                 }
                 
                 // Debug: Log first 5 entries with theme data
@@ -5880,7 +5892,24 @@ class ScheduleUpdater {
 }
 
 // Main execution
-if (require.main === module) {
+// Robust main-check that works for CommonJS and ESM (even when invoked with a relative path)
+let isMain = false;
+if (typeof require !== 'undefined' && require.main === module) {
+    isMain = true;
+} else if (typeof import.meta !== 'undefined') {
+    try {
+        const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
+        const scriptPath = fileURLToPath(import.meta.url);
+        if (entryPath && path.resolve(scriptPath) === entryPath) isMain = true;
+    } catch (e) {
+        // fallback: leave isMain false
+    }
+}
+
+// Provide CommonJS-like __filename and __dirname when running as ESM
+let __filename = typeof fileURLToPath === 'function' ? fileURLToPath(import.meta.url) : undefined;
+let __dirname = __filename ? path.dirname(__filename) : undefined;
+if (isMain) {
     // Read from backup (clean template) and write to Kemps.html
     const backupPath = path.join(__dirname, 'Kemps.backup.html');
     const htmlPath = fs.existsSync(backupPath) ? backupPath : path.join(__dirname, 'Kemps.html');
@@ -5916,4 +5945,4 @@ if (require.main === module) {
     })();
 }
 
-module.exports = ScheduleUpdater;
+export default ScheduleUpdater;

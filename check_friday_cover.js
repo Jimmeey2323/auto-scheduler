@@ -1,5 +1,5 @@
-const { google } = require('googleapis');
-require('dotenv').config();
+import { google } from 'googleapis';
+import 'dotenv/config';
 
 async function checkFridayCover() {
   const client = new google.auth.OAuth2(

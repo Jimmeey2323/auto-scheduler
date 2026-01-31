@@ -1,5 +1,5 @@
-const { google } = require('googleapis');
-const fs = require('fs');
+import { google } from 'googleapis';
+import fs from 'fs';
 
 async function checkThemes() {
     const keys = JSON.parse(fs.readFileSync('keys.json'));

@@ -1,7 +1,7 @@
-const { google } = require('googleapis');
-const fs = require('fs');
-const path = require('path');
-require('dotenv').config();
+import { google } from 'googleapis';
+import fs from 'fs';
+import path from 'path';
+import 'dotenv/config';
 
 // OAuth2 configuration with Gmail scope
 const OAUTH2_CONFIG = {
@@ -56,7 +56,7 @@ async function setupGmailAuth() {
   console.log('5. Copy just the code part and paste it below');
   
   // Wait for user input
-  const readline = require('readline').createInterface({
+  import readline from 'readline';.createInterface({
     input: process.stdin,
     output: process.stdout
   });
@@ -118,4 +118,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { setupGmailAuth };
+export default { setupGmailAuth };

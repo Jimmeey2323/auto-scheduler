@@ -1,6 +1,7 @@
 {
   "name": "kemps-schedule-updater",
   "version": "1.0.0",
+  "type": "module",
   "description": "Advanced script to update Kemps.html with class schedule data from CSV",
   "main": "updateKempsSchedule.js",
   "scripts": {

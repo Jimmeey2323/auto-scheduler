@@ -1,5 +1,5 @@
-const { GoogleAuth } = require('google-auth-library');
-const { google } = require('googleapis');
+import { GoogleAuth } from 'google-auth-library';
+import { google } from 'googleapis';
 
 async function test() {
   const auth = new GoogleAuth({

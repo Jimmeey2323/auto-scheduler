@@ -1,5 +1,5 @@
-const { google } = require('googleapis');
-require('dotenv').config();
+import { google } from 'googleapis';
+import 'dotenv/config';
 
 async function checkScheduleSheet() {
   const client = new google.auth.OAuth2(

@@ -1,5 +1,5 @@
-const path = require('path');
-const ScheduleUpdater = require('./updateKempsSchedule.js');
+import path from 'path';
+import ScheduleUpdater from './updateKempsSchedule.js';
 
 /**
  * Simple script to update HTML and PDF from existing Google Sheets data
@@ -35,4 +35,4 @@ if (require.main === module) {
     updateHTMLFromSheets();
 }
 
-module.exports = { updateHTMLFromSheets };
+export default { updateHTMLFromSheets };

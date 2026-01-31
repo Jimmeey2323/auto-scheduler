@@ -1,5 +1,5 @@
-const path = require('path');
-const ScheduleUpdater = require('./updateKempsSchedule.js');
+import path from 'path';
+import ScheduleUpdater from './updateKempsSchedule.js';
 
 /**
  * Complete workflow to update schedule from email to final HTML/PDF
@@ -48,4 +48,4 @@ if (require.main === module) {
     fullScheduleUpdate();
 }
 
-module.exports = fullScheduleUpdate;
+export default fullScheduleUpdate;
