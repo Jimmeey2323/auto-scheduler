@@ -300,10 +300,56 @@ class ScheduleUpdater {
 
             // Step 2: Extract Google Sheets link from email
             console.log('🔗 Step 2: Extracting Google Sheets link...');
-            const sheetsLink = this.extractSheetsLink(emailData.body);
+            
+            // Search through all messages to find the most recent or corrected link
+            let sheetsLink = null;
+            let correctedLink = null;
+            
+            if (emailData.allMessages && emailData.allMessages.length > 0) {
+                console.log('🔍 Searching all messages for Google Sheets links...');
+                
+                // First pass: look for corrected/updated links
+                for (let i = 0; i < emailData.allMessages.length; i++) {
+                    const message = emailData.allMessages[i];
+                    console.log(`\n📧 Checking message ${i + 1} for correction keywords:`);
+                    
+                    // Check if this message contains correction keywords
+                    const hasCorrection = /sorry|correct|updated?|new|latest/i.test(message.substring(0, 300));
+                    if (hasCorrection) {
+                        console.log('✅ Found correction keywords in message');
+                        const link = this.extractSheetsLink(message);
+                        if (link && !correctedLink) {
+                            correctedLink = link;
+                            console.log(`🔧 Found CORRECTED link: ${correctedLink}`);
+                        }
+                    }
+                }
+                
+                // Second pass: if no corrected link found, get the first link from most recent message that has one
+                if (!correctedLink) {
+                    console.log('🔍 No corrected link found, searching for any link (most recent first)...');
+                    for (let i = emailData.allMessages.length - 1; i >= 0; i--) {
+                        console.log(`\n📧 Searching message ${i + 1} of ${emailData.allMessages.length}:`);
+                        sheetsLink = this.extractSheetsLink(emailData.allMessages[i]);
+                        if (sheetsLink) {
+                            console.log(`✅ Found Google Sheets link in message ${i + 1}`);
+                            break;
+                        }
+                    }
+                }
+                
+                // Use corrected link if found, otherwise use the most recent one
+                sheetsLink = correctedLink || sheetsLink;
+                
+            } else {
+                // Fallback: try latest message
+                console.log('🔍 Searching latest message only...');
+                sheetsLink = this.extractSheetsLink(emailData.body);
+            }
+            
             if (!sheetsLink) {
-                console.log('⚠️  No Google Sheets link found in email');
-                console.log('🔍 Email body search preview:', emailData.body.substring(0, 500));
+                console.log('⚠️  No Google Sheets link found in email or thread');
+                console.log('🔍 Latest message preview:', emailData.body.substring(0, 500));
                 return;
             }
 
@@ -322,7 +368,19 @@ class ScheduleUpdater {
             
             // Step 4: Determine if this is first email (initial schedule) or subsequent email (changes)
             console.log('🎨 Step 4: Parsing email for covers and themes...');
-            const isFirstEmail = this.hasSpreadsheetLink(emailData.body);
+            
+            // Check for spreadsheet link in latest message first, then in thread
+            let isFirstEmail = this.hasSpreadsheetLink(emailData.body);
+            if (!isFirstEmail && emailData.allMessages && emailData.allMessages.length > 0) {
+                // Check all messages in thread for spreadsheet link
+                for (const message of emailData.allMessages) {
+                    if (this.hasSpreadsheetLink(message)) {
+                        isFirstEmail = true;
+                        break;
+                    }
+                }
+            }
+            
             console.log(`📧 Email type: ${isFirstEmail ? 'FIRST EMAIL (using spreadsheet covers only)' : 'SUBSEQUENT EMAIL (using email body covers)'}`);
             
             const emailInfo = this.parseEmailForScheduleInfo(emailData.allMessages, isFirstEmail);
@@ -422,13 +480,13 @@ class ScheduleUpdater {
             
             // Search for the most recent schedule email from approved senders
             const senderQuery = EMAIL_CONFIG.SENDER_EMAILS.map(e => `from:${e}`).join(' OR ');
-            const searchQuery = `(${senderQuery}) subject:"${EMAIL_CONFIG.SUBJECT_KEYWORD}"`;
+            const searchQuery = `(${senderQuery}) subject:Schedule newer_than:7d`;
             console.log(`🔍 Email search query: ${searchQuery}`);
             
             let response = await gmail.users.messages.list({
                 userId: 'me',
                 q: searchQuery,
-                maxResults: 1
+                maxResults: 10
             });
             
             if (!response.data.messages || response.data.messages.length === 0) {
@@ -438,8 +496,41 @@ class ScheduleUpdater {
 
             console.log(`📬 Found ${response.data.messages.length} potential emails`);
             
-            // Get the most recent email (first in the list)
-            const messageId = response.data.messages[0].id;
+            // Get full metadata for all messages to sort by date
+            const messagesWithDates = await Promise.all(
+                response.data.messages.map(async (msg) => {
+                    const detail = await gmail.users.messages.get({
+                        userId: 'me',
+                        id: msg.id,
+                        format: 'metadata',
+                        metadataHeaders: ['Subject', 'Date']
+                    });
+                    const subject = detail.data.payload.headers.find(h => h.name === 'Subject')?.value;
+                    const date = detail.data.payload.headers.find(h => h.name === 'Date')?.value;
+                    return {
+                        id: msg.id,
+                        subject: subject,
+                        date: date,
+                        internalDate: detail.data.internalDate
+                    };
+                })
+            );
+            
+            // Sort by internal date (milliseconds since epoch) - most recent first
+            messagesWithDates.sort((a, b) => parseInt(b.internalDate) - parseInt(a.internalDate));
+            
+            // Log all found emails for debugging
+            console.log('\n📧 Found emails (sorted by date):');
+            messagesWithDates.forEach((msg, idx) => {
+                console.log(`  ${idx + 1}. ${msg.subject}`);
+                console.log(`     Date: ${msg.date}`);
+            });
+            
+            const mostRecentMessage = messagesWithDates[0];
+            console.log(`\n✅ Using most recent: "${mostRecentMessage.subject}"\n`);
+            
+            // Get the most recent email (already sorted by date)
+            const messageId = mostRecentMessage.id;
             console.log(`📬 Using email with ID: ${messageId}`);
 
             // Get the email thread
@@ -593,6 +684,7 @@ class ScheduleUpdater {
      */
     extractSheetsLink(emailBody) {
         console.log('🔗 Extracting Google Sheets link from email...');
+        console.log(`📄 Email body preview (first 300 chars): ${emailBody.substring(0, 300)}...`);
         
         // Look for Google Sheets URLs
         const sheetsRegex = /https:\/\/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/g;
@@ -600,6 +692,7 @@ class ScheduleUpdater {
         
         if (matches && matches.length > 0) {
             console.log(`✅ Found Google Sheets link: ${matches[0]}`);
+            console.log(`📊 Spreadsheet ID: ${matches[0].match(/\/d\/([a-zA-Z0-9-_]+)/)[1]}`);
             return matches[0];
         }
         
@@ -741,6 +834,16 @@ class ScheduleUpdater {
             const fitThemeName = fit_theme[1].trim();
             console.log(`🏋️ Found FIT theme: ${fitThemeName}`);
             themeSections.push({ type: 'FIT', content: `All classes, all week - ${fitThemeName}` });
+        }
+        
+        // PowerCycle Themes: "POWER CYCLE THEMES :" followed by location-based sections
+        const powercycle_themes = fullContent.match(/POWER CYCLE THEMES\s*:\s*(.*?)(?=\n\s*(?:Thanks,|Best,|Thanks\s+and\s+regards|Warm\s+Regards|Regards,|On\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)|\n--\s*\n|$))/is);
+        if (powercycle_themes) {
+            let powercycleContent = powercycle_themes[1].trim();
+            // Clean up content and remove email signatures
+            powercycleContent = powercycleContent.split(/Thanks,|Thanks\s+and\s+regards|Warm\s+Regards|Regards,/i)[0].trim();
+            console.log(`🚴 Found PowerCycle themes section`);
+            themeSections.push({ type: 'PowerCycle', content: powercycleContent });
         }
         
         console.log(`📊 Found ${themeSections.length} theme sections`);
@@ -1109,10 +1212,10 @@ class ScheduleUpdater {
         console.log(`🔍 Parsing theme line: "${line}" for type: ${themeType}`);
         
         if (themeType === 'Amped Up') {
-            // Pattern: "Tuesday - Icy Isometric"
-            const pattern = /([A-Za-z]+)\s*-\s*(.+)/;
+            // Pattern: "Tuesday - Icy Isometric" or "Tuesday : Progression Overload"
+            const pattern = /([A-Za-z]+)\s*[:-]\s*(.+)/;
             const match = line.match(pattern);
-            if (match) {
+            if (match && !match[2].toLowerCase().includes('sending this shortly')) {
                 return {
                     day: this.expandDayName(match[1]),
                     theme: match[2].trim(),
@@ -1360,7 +1463,13 @@ class ScheduleUpdater {
             console.log('🔍 Sample headers:', linkedSheetData[0]?.slice(0, 10));
             
             // Clean and format the data (especially time columns)
-            const cleanedData = this.cleanSheetData(linkedSheetData);
+            let cleanedData = this.cleanSheetData(linkedSheetData);
+            
+            // Update date headers in row 2 to current week dates
+            if (cleanedData.length >= 3) {
+                console.log('📅 Updating date headers to current week...');
+                cleanedData = this.updateSheetDateHeaders(cleanedData);
+            }
             
             console.log(`✅ Prepared ${cleanedData.length} rows for target sheet`);
             
@@ -1370,6 +1479,49 @@ class ScheduleUpdater {
             console.error('❌ Error copying schedule data:', error);
             throw error;
         }
+    }
+
+    /**
+     * Update date headers in sheet data to current week dates
+     */
+    updateSheetDateHeaders(sheetData) {
+        if (!sheetData || sheetData.length < 3) {
+            console.log('⚠️  Not enough rows to update date headers');
+            return sheetData;
+        }
+        
+        const updatedData = [...sheetData];
+        const dayRow = updatedData[2] || []; // Row 3 has days
+        const dateRow = updatedData[1] || []; // Row 2 has dates (this is what we want to update)
+        
+        console.log('📅 Original date row:', dateRow.slice(0, 10));
+        console.log('📅 Day row for reference:', dayRow.slice(0, 10));
+        
+        // Update dates for each day column
+        dayRow.forEach((cell, index) => {
+            if (cell && typeof cell === 'string') {
+                const dayMatch = cell.match(/(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i);
+                if (dayMatch) {
+                    const dayName = dayMatch[1];
+                    const currentWeekDate = this.getDateForDay(dayName);
+                    
+                    // Convert format from DD-MMM-YYYY to "D MMM YYYY" (to match existing format)
+                    const parts = currentWeekDate.split('-');
+                    const day = parseInt(parts[0], 10); // Remove leading zero
+                    const month = parts[1];
+                    const year = parts[2];
+                    const formattedDate = `${day} ${month} ${year}`;
+                    
+                    updatedData[1][index] = formattedDate;
+                    
+                    console.log(`📅 Updated ${dayName} date: ${dateRow[index]} → ${formattedDate}`);
+                }
+            }
+        });
+        
+        console.log('✅ Updated date row:', updatedData[1].slice(0, 10));
+        
+        return updatedData;
     }
 
     /**
@@ -2659,6 +2811,10 @@ class ScheduleUpdater {
                             if (this.classNamesMatch(classCell, 'fit') && timeCell) {
                                 row[colConfig.trainer2Col] = theme.theme;
                                 console.log(`✅ Applied FIT theme: ${theme.theme} to ${dayName} row ${rowIndex + 1}, col ${colConfig.trainer2Col + 1} (Class: "${classCell}", Time: "${timeCell}", Location: "${locationCell}")`);
+                                
+                                // Also update in-memory class data
+                                this.updateInMemoryClassTheme(dayName, timeCell, classCell, theme.theme);
+                                
                                 themesApplied++;
                             }
                         }
@@ -2692,6 +2848,10 @@ class ScheduleUpdater {
                                 console.log(`🎯 FOUND AMPED UP MATCH: Class="${classCell}" normalized="${this.normalizeClassName(classCell)}" Location="${locationCell}" matches="${this.matchLocation(locationCell, theme.location)}"`);
                                 row[colConfig.trainer2Col] = theme.theme;
                                 console.log(`✅ Applied Amped Up theme: ${theme.theme} to ${theme.day} row ${rowIndex + 1}, col ${colConfig.trainer2Col + 1} (Class: "${classCell}", Time: "${timeCell}", Location: "${locationCell}")`);
+                                
+                                // Also update in-memory class data
+                                this.updateInMemoryClassTheme(theme.day, timeCell, classCell, theme.theme);
+                                
                                 themesApplied++;
                             } else if (classCell && this.matchLocation(locationCell, theme.location) && timeCell) {
                                 // Debug: Show why it didn't match
@@ -2742,6 +2902,10 @@ class ScheduleUpdater {
                                 if (cellTime === themeTime) {
                                     row[colConfig.trainer2Col] = theme.theme;
                                     console.log(`✅ Applied Bandra cycle theme: ${theme.theme} to ${theme.day} row ${rowIndex + 1}, col ${colConfig.trainer2Col + 1} (Class: "${classCell}", Time: "${timeCell}", Location: "${locationCell}")`);
+                                    
+                                    // Also update in-memory class data
+                                    this.updateInMemoryClassTheme(theme.day, timeCell, classCell, theme.theme);
+                                    
                                     themesApplied++;
                                 } else {
                                     console.log(`❌ Time mismatch: "${cellTime}" ≠ "${themeTime}" for ${theme.theme}`);
@@ -2772,6 +2936,10 @@ class ScheduleUpdater {
                                     timeCell) {
                                     row[colConfig.trainer2Col] = theme.theme;
                                     console.log(`✅ Applied ${theme.classType} theme: ${theme.theme} to ${theme.day} row ${rowIndex + 1}, col ${colConfig.trainer2Col + 1} (Class: "${classCell}", Time: "${timeCell}", Location: "${locationCell}")`);
+                                    
+                                    // Also update in-memory class data
+                                    this.updateInMemoryClassTheme(theme.day, timeCell, classCell, theme.theme);
+                                    
                                     themesApplied++;
                                 }
                             }
@@ -2783,6 +2951,35 @@ class ScheduleUpdater {
 
         console.log(`📊 Applied ${coversApplied} covers and ${themesApplied} themes to spreadsheet`);
         return updatedValues;
+    }
+
+    /**
+     * Update theme in the in-memory class data to keep it in sync with Google Sheets
+     */
+    updateInMemoryClassTheme(dayName, timeString, className, theme) {
+        if (!this.kwalityClasses) return;
+        
+        // Normalize values for matching
+        const normalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1).toLowerCase();
+        const normalizedTime = this.normalizeTimeForComparison(timeString);
+        const normalizedClass = this.normalizeClassName(className);
+        
+        // Find matching class record(s) and update theme
+        let updatedCount = 0;
+        for (const classData of this.kwalityClasses) {
+            if (classData.Day === normalizedDay &&
+                this.normalizeTimeForComparison(classData.Time) === normalizedTime &&
+                this.normalizeClassName(classData.Class) === normalizedClass) {
+                
+                classData.Theme = theme;
+                updatedCount++;
+                console.log(`  🔄 Updated in-memory class: ${normalizedDay} ${timeString} ${className} -> Theme: "${theme}"`);
+            }
+        }
+        
+        if (updatedCount === 0) {
+            console.log(`  ⚠️  No matching in-memory class found for: ${normalizedDay} ${timeString} ${className}`);
+        }
     }
 
     /**
