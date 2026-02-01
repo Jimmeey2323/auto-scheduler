@@ -1,2 +1,0 @@
-# Schedule Validator Requirements
-PyPDF2>=3.0.0

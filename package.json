@@ -6,7 +6,7 @@
   "main": "updateKempsSchedule.js",
   "scripts": {
     "update": "node updateKempsSchedule.js",
-    "test": "node updateKempsSchedule.js"
+    "test": "echo \"No tests configured\""
   },
   "keywords": [
     "schedule",
@@ -22,7 +22,9 @@
     "csv-parse": "^5.5.0",
     "dotenv": "^17.2.3",
     "googleapis": "^126.0.1",
+    "jsdom": "^27.4.0",
     "open": "^11.0.0",
+    "openai": "^4.104.0",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
     "puppeteer": "^23.0.0"

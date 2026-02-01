@@ -9,6 +9,9 @@ import axios from 'axios';
 import { PDFDocument } from 'pdf-lib';
 import 'dotenv/config';
 
+// Enhanced Schedule Mapping System
+import EnhancedScheduleMapper from './enhancedScheduleMapper.js';
+
 // Google OAuth Configuration
 const GOOGLE_CONFIG = {
   CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
@@ -66,6 +69,9 @@ class ScheduleUpdater {
         this.$ = null;
         this.currentLocation = location.toLowerCase(); // Track current location for theme badge styling
         this.locationName = this.currentLocation.charAt(0).toUpperCase() + this.currentLocation.slice(1); // 'Kemps' or 'Bandra'
+        
+        // Initialize enhanced mapping system
+        this.enhancedMapper = new EnhancedScheduleMapper();
     }
 
     /**
@@ -297,7 +303,7 @@ class ScheduleUpdater {
 
             console.log('✅ Found email:', emailData.subject);
             console.log('📧 Email body preview:', emailData.body.substring(0, 200) + '...');
-
+            
             // Step 2: Extract Google Sheets link from email
             console.log('🔗 Step 2: Extracting Google Sheets link...');
             
@@ -413,21 +419,17 @@ class ScheduleUpdater {
      * Find the latest email from the specified sender with Schedule in subject
      */
     /**
-     * Get the current week's date range for email search
+     * Get the current week's date range for email search - Enhanced Version
      */
     getCurrentWeekDateRange() {
-        const today = new Date();
-        const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        console.log('📅 Calculating week date range with enhanced algorithm...');
+        const result = this.enhancedMapper.calculateWeekendDates();
         
-        // Calculate Monday of current week
-        const monday = new Date(today);
-        monday.setDate(today.getDate() - currentDay + 1);
-        
-        // Calculate Sunday of current week  
-        const sunday = new Date(monday);
-        sunday.setDate(monday.getDate() + 6);
-        
-        return { monday, sunday };
+        return {
+            monday: result.monday,
+            sunday: result.sunday,
+            saturday: result.saturday
+        };
     }
 
     /**
@@ -836,14 +838,38 @@ class ScheduleUpdater {
             themeSections.push({ type: 'FIT', content: `All classes, all week - ${fitThemeName}` });
         }
         
-        // PowerCycle Themes: "POWER CYCLE THEMES :" followed by location-based sections
-        const powercycle_themes = fullContent.match(/POWER CYCLE THEMES\s*:\s*(.*?)(?=\n\s*(?:Thanks,|Best,|Thanks\s+and\s+regards|Warm\s+Regards|Regards,|On\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)|\n--\s*\n|$))/is);
+        // PowerCycle Themes: Enhanced extraction using AI-powered parsing and thread scanning
+        let extractedPowerCycleThemes = [];
+        
+        console.log('🚴 Extracting PowerCycle themes using enhanced thread scanning...');
+        
+        // Use enhanced mapper to scan entire email thread for themes
+        extractedPowerCycleThemes = this.enhancedMapper.extractPowerCycleThemes(allMessages || []);
+        
+        // Also check if there's a direct PowerCycle section for backward compatibility
+        const powercycle_themes = fullContent.match(/POWER CYCLE THEMES\\s*:\\s*(.*?)(?=\\n\\s*(?:Thanks,|Best,|Thanks\\s+and\\s+regards|Warm\\s+Regards|Regards,|On\\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)|\\n--\\s*\\n|$))/is);
+        
         if (powercycle_themes) {
             let powercycleContent = powercycle_themes[1].trim();
             // Clean up content and remove email signatures
-            powercycleContent = powercycleContent.split(/Thanks,|Thanks\s+and\s+regards|Warm\s+Regards|Regards,/i)[0].trim();
-            console.log(`🚴 Found PowerCycle themes section`);
+            powercycleContent = powercycleContent.split(/Thanks,|Thanks\\s+and\\s+regards|Warm\\s+Regards|Regards,/i)[0].trim();
+            console.log('📧 Found PowerCycle section in main content as well');
+            
             themeSections.push({ type: 'PowerCycle', content: powercycleContent });
+        }
+        
+        if (extractedPowerCycleThemes.length === 0) {
+            console.log('⚠️ No PowerCycle themes found in email thread - using default themes');
+            extractedPowerCycleThemes = this.enhancedMapper.getDefaultPowerCycleThemes();
+        }
+        
+        // Store extracted themes for later mapping
+        this.extractedPowerCycleThemes = extractedPowerCycleThemes;
+        
+        // Add PowerCycle themes directly to result (they're already parsed by enhancedMapper)
+        if (extractedPowerCycleThemes.length > 0) {
+            console.log(`🚴 Adding ${extractedPowerCycleThemes.length} extracted PowerCycle themes to result`);
+            result.themes.push(...extractedPowerCycleThemes);
         }
         
         console.log(`📊 Found ${themeSections.length} theme sections`);
@@ -1986,25 +2012,14 @@ class ScheduleUpdater {
     /**
      * Normalize location names
      */
+    /**
+     * Enhanced location normalization using dynamic mapping
+     */
     normalizeLocationName(raw) {
         if (!raw) return '';
-        const val = raw.toString().trim().toLowerCase();
-        const map = {
-            'kemps': 'Kwality House, Kemps Corner',
-            'kemps corner': 'Kwality House, Kemps Corner',
-            'bandra': 'Supreme HQ, Bandra',
-            'kenkere': 'Kenkere House',
-            'south united': 'South United Football Club',
-            'copper cloves': 'The Studio by Copper + Cloves',
-            'wework galaxy': 'WeWork Galaxy',
-            'wework prestige': 'WeWork Prestige Central',
-            'physique': 'Physique Outdoor Pop-up',
-            'annex': 'Kwality House, Kemps Corner',
-        };
-        for (const key in map) {
-            if (val.includes(key)) return map[key];
-        }
-        return raw.toString().trim();
+        
+        const locationResult = this.enhancedMapper.identifyLocation(raw);
+        return locationResult.canonical;
     }
 
     /**
@@ -2466,18 +2481,6 @@ class ScheduleUpdater {
         const dayRow = values[2] || [];    // Row 3 has days
         const headerRow = values[3] || []; // Row 4 has headers like "Trainer 2", "Cover"
         
-        console.log('📅 Day row (first 20):', dayRow.slice(0, 20));
-        console.log('📅 Header row (first 20):', headerRow.slice(0, 20));
-        
-        // DEBUG: Show ALL headers with their indices
-        console.log('🔍 All headers:');
-        for (let i = 0; i < Math.min(headerRow.length, 45); i++) {
-            const header = String(headerRow[i] || '').trim();
-            if (header) {
-                console.log(`  Col ${i}: "${header}"`);
-            }
-        }
-
         // Find day columns and their associated data columns
         const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
         
@@ -2744,52 +2747,9 @@ class ScheduleUpdater {
             }
         }
 
-        // DEBUG: Show comprehensive sheet structure analysis
-        console.log('\n🔍 DEBUG: Sheet Structure Analysis:');
-        console.log('Day columns:', Object.keys(structure.dayColumns));
-        for (const [day, columns] of Object.entries(structure.dayColumns)) {
-            console.log(`${day}:`, columns.map(col => `{day:${col.dayCol}, location:${col.locationCol}, class:${col.classCol}, trainer1:${col.trainer1Col}, trainer2:${col.trainer2Col}, cover:${col.coverCol}}`));
-        }
-        
-        // DEBUG: Show what themes we're trying to apply
-        console.log('\n🔍 DEBUG: Themes to apply:');
-        for (const theme of emailInfo.themes) {
-            console.log(`  - ${theme.classType} theme "${theme.theme}" for ${theme.day} ${theme.time || ''} at ${theme.location || 'any location'}`);
-        }
-        
-        // DEBUG: Show sample data for each day to understand the actual content
-        console.log('\n🔍 DEBUG: Sample data by day:');
-        for (const [dayName, dayColumns] of Object.entries(structure.dayColumns)) {
-            if (!dayColumns || !dayColumns[0]) continue;
-            const colConfig = dayColumns[0];
-            
-            console.log(`\n${dayName} column structure:`);
-            console.log(`  locationCol: ${colConfig.locationCol}, classCol: ${colConfig.classCol}, trainer2Col: ${colConfig.trainer2Col}`);
-            
-            // Show some sample rows for this day
-            console.log(`  Sample ${dayName} data:`);
-            let count = 0;
-            for (let i = structure.headerRows; i < updatedValues.length && count < 5; i++) {
-                const row = updatedValues[i];
-                if (row && row[0]) {
-                    const time = String(row[0] || '').trim();
-                    const location = String(row[colConfig.locationCol] || '').trim();
-                    const classType = String(row[colConfig.classCol] || '').trim();
-                    const trainer1 = String(row[colConfig.trainer1Col] || '').trim();
-                    const trainer2 = String(row[colConfig.trainer2Col] || '').trim();
-                    
-                    if (time) {
-                        console.log(`    Row ${i+1}: Time="${time}" Location="${location}" Class="${classType}" T1="${trainer1}" T2="${trainer2}"`);
-                        count++;
-                    }
-                }
-            }
-        }
-        console.log('');
-        
         // Apply themes with fixed matching logic for actual class names
         for (const theme of emailInfo.themes) {
-            console.log(`🎨 Processing theme for ${theme.day}: ${theme.theme} (Type: ${theme.classType})`);
+            console.log(`🎨 Processing theme #${emailInfo.themes.indexOf(theme) + 1}/${emailInfo.themes.length}: ${theme.theme} (Type: ${theme.classType}, Day: ${theme.day}, Location: ${theme.location})`);
             
             if (theme.classType === 'FIT' && theme.location === 'All') {
                 // Apply theme to all FIT classes across all days
@@ -2918,7 +2878,52 @@ class ScheduleUpdater {
                 // Handle other specific theme types with flexible validation
                 console.log(`🔍 Looking for ${theme.classType || 'general'} classes on ${theme.day}`);
                 
-                if (theme.day && theme.day !== 'All') {
+                // Special handling for PowerCycle themes
+                if ((theme.classType === 'CYCLE' || theme.classType === 'PowerCycle' || theme.type === 'powercycle') && theme.day && theme.time && theme.location) {
+                    console.log(`🚴 Processing PowerCycle theme: ${theme.theme} for ${theme.day} ${theme.time} at ${theme.location}`);
+                    
+                    const dayColumns = structure.dayColumns[theme.day];
+                    if (dayColumns) {
+                        console.log(`🔍 Found ${dayColumns.length} column configs for ${theme.day}`);
+                        for (const colConfig of dayColumns) {
+                            for (let rowIndex = structure.headerRows; rowIndex < updatedValues.length; rowIndex++) {
+                                const row = updatedValues[rowIndex];
+                                if (!row || row.length <= colConfig.trainer2Col) continue;
+                                
+                                const timeCell = String(row[0] || '').trim();
+                                const classCell = String(row[colConfig.classCol] || '').trim();
+                                const locationCell = String(row[colConfig.locationCol] || '').toLowerCase().trim();
+                                
+                                // Check if this is a cycle/powercycle class
+                                if (this.classNamesMatch(classCell, 'cycle') || this.classNamesMatch(classCell, 'powercycle')) {
+                                    // Check location match
+                                    if (this.matchLocation(locationCell, theme.location)) {
+                                        // Check time match - handle format variations
+                                        const themeTime = this.normalizeTimeFormat(theme.time);
+                                        const cellTime = this.normalizeTimeFormat(timeCell);
+                                        
+                                        // Debug output for non-matches
+                                        if (rowIndex < structure.headerRows + 20 && this.matchLocation(locationCell, theme.location)) {
+                                            console.log(`🔍 PowerCycle matching for ${theme.day}: normalized cell="${cellTime}" vs normalized theme="${themeTime}" (original cell="${timeCell}", original theme="${theme.time}")`);
+                                        }
+                                        
+                                        if (cellTime === themeTime) {
+                                            row[colConfig.trainer2Col] = theme.theme;
+                                            console.log(`✅ Applied PowerCycle theme: ${theme.theme} to ${theme.day} row ${rowIndex + 1}, col ${colConfig.trainer2Col + 1} (Class: "${classCell}", Time: "${timeCell}", Location: "${locationCell}")`);
+                                            
+                                            // Also update in-memory class data
+                                            this.updateInMemoryClassTheme(theme.day, timeCell, classCell, theme.theme);
+                                            
+                                            themesApplied++;
+                                        } else if (rowIndex < structure.headerRows + 20 && this.matchLocation(locationCell, theme.location)) {
+                                            console.log(`❌ PowerCycle time mismatch: normalized "${cellTime}" ≠ "${themeTime}"`);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (theme.day && theme.day !== 'All') {
                     const dayColumns = structure.dayColumns[theme.day];
                     if (dayColumns) {
                         for (const colConfig of dayColumns) {
@@ -3194,16 +3199,6 @@ class ScheduleUpdater {
         // Ensure sold-out badge CSS is present
         this.ensureSoldOutBadgeCSS();
         
-        // DEBUG: Count PDF-related elements before processing
-        console.log('\n🔍 DEBUG: PDF Elements Count Before Processing:');
-        console.log('  - <script> tags:', this.$('script').length);
-        console.log('  - <div id="pg1">:', this.$('#pg1').length);
-        console.log('  - <div id="pg2">:', this.$('#pg2').length);
-        console.log('  - <img id="pdf1">:', this.$('#pdf1').length);
-        console.log('  - <img id="pdf2">:', this.$('#pdf2').length);
-        console.log('  - metadata script:', this.$('script#metadata').length);
-        console.log('  - annotations script:', this.$('script#annotations').length);
-        console.log('  - Total spans:', this.$('span').length);
     }
 
     /**
@@ -3355,7 +3350,6 @@ class ScheduleUpdater {
             'Sunday': []
         };
 
-        let themeDebugCount = 0;
         this.kwalityClasses.forEach(classData => {
             // Normalize day value to Title Case keys used in scheduleByDay
             const rawDay = String(classData.Day || classData.day || classData.DayName || '').trim();
@@ -3380,12 +3374,6 @@ class ScheduleUpdater {
                     }
                 }
                 
-                // Debug: Log first 5 entries with theme data
-                if (theme && theme.trim() && themeDebugCount < 5) {
-                    console.log(`🎨 Theme found: "${theme}" for ${classData.Class} on ${day} at ${classData.Time}`);
-                    themeDebugCount++;
-                }
-                
                 scheduleByDay[day].push({
                     time: this.normalizeTime(classData.Time),
                     class: classData.Class,
@@ -3395,11 +3383,6 @@ class ScheduleUpdater {
                 });
             }
         });
-        
-        if (themeDebugCount === 0) {
-            console.log('⚠️  WARNING: No theme data found in any records! Check if theme patterns are properly configured.');
-        }
-
         return scheduleByDay;
     }
 
