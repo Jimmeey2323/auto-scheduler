@@ -521,13 +521,6 @@ class ScheduleUpdater {
             // Sort by internal date (milliseconds since epoch) - most recent first
             messagesWithDates.sort((a, b) => parseInt(b.internalDate) - parseInt(a.internalDate));
             
-            // Log all found emails for debugging
-            console.log('\n📧 Found emails (sorted by date):');
-            messagesWithDates.forEach((msg, idx) => {
-                console.log(`  ${idx + 1}. ${msg.subject}`);
-                console.log(`     Date: ${msg.date}`);
-            });
-            
             const mostRecentMessage = messagesWithDates[0];
             console.log(`\n✅ Using most recent: "${mostRecentMessage.subject}"\n`);
             
@@ -2494,7 +2487,7 @@ class ScheduleUpdater {
                     }
                     
                     // Use known pattern-based mapping based on the header structure we observed
-                    // From debug: Col 0: Time, Col 1: Location, Col 2: Class, Col 3: Trainer 1, Col 4: Trainer 2, Col 6: Cover
+                    // Col 0: Time, Col 1: Location, Col 2: Class, Col 3: Trainer 1, Col 4: Trainer 2, Col 6: Cover
                     // Then: Col 7: Location, Col 8: Class, Col 9: Trainer 1, Col 11: Trainer 2, Col 12: Cover, etc.
                     
                     let locationCol = -1;
@@ -2624,11 +2617,6 @@ class ScheduleUpdater {
                     // Skip hosted classes - they should not receive covers from email
                     if (classCell.includes('hosted')) {
                         continue;
-                    }
-                    
-                    // Debug: Show what we're checking
-                    if (timeCell && locationCell.includes(cover.location.toLowerCase())) {
-                        console.log(`🔍 Checking row ${rowIndex + 1}: Time="${timeCell}" Location="${locationCell}" Class="${classCell}" vs Cover Location="${cover.location}"`);
                     }
                     
                     // Match location - improved matching
@@ -2796,11 +2784,6 @@ class ScheduleUpdater {
                             const locationCell = String(row[colConfig.locationCol] || '').toLowerCase().trim();
                             const timeCell = String(row[0] || '').trim();
                             
-                            // Show all classes for this day for debugging
-                            if (classCell && this.matchLocation(locationCell, 'kemps')) {
-                                console.log(`🔍 ${theme.day} Kemps class found: Time="${timeCell}" Class="${classCell}" Location="${locationCell}"`);
-                            }
-                            
                             // Match Amped Up classes at correct location using dynamic matching
                             if (this.classNamesMatch(classCell, 'amped up') && 
                                 this.matchLocation(locationCell, theme.location) && 
@@ -2813,11 +2796,6 @@ class ScheduleUpdater {
                                 this.updateInMemoryClassTheme(theme.day, timeCell, classCell, theme.theme);
                                 
                                 themesApplied++;
-                            } else if (classCell && this.matchLocation(locationCell, theme.location) && timeCell) {
-                                // Debug: Show why it didn't match
-                                const classMatch = this.classNamesMatch(classCell, 'amped up');
-                                const locationMatch = this.matchLocation(locationCell, theme.location);
-                                console.log(`❌ AMPED UP NO MATCH: Class="${classCell}" (normalized="${this.normalizeClassName(classCell)}") classMatch=${classMatch}, locationMatch=${locationMatch}, theme.location="${theme.location}"`);
                             }
                         }
                     }
@@ -2838,16 +2816,7 @@ class ScheduleUpdater {
                             const classCell = String(row[colConfig.classCol] || '').trim();
                             const locationCell = String(row[colConfig.locationCol] || '').toLowerCase().trim();
                             
-                            // Debug: Show all cycle classes for this day
-                            if (this.classNamesMatch(classCell, 'cycle') && timeCell) {
-                                console.log(`🚴‍♂️ ${theme.day} cycle class found: Time="${timeCell}" Class="${classCell}" Location="${locationCell}"`);
-                            }
-                            
-                            // Show all Bandra cycle classes for this day for debugging
-                            if (this.classNamesMatch(classCell, 'cycle') && this.matchLocation(locationCell, 'bandra')) {
-                                console.log(`🔍 ${theme.day} Bandra cycle: Time="${timeCell}" Class="${classCell}" Location="${locationCell}" (looking for time: ${theme.time})`);
-                                console.log(`   Normalized times: cellTime="${this.normalizeTimeFormat(timeCell)}" vs themeTime="${this.normalizeTimeFormat(theme.time)}"`);
-                            }                            // Match cycle classes at Bandra with matching time using dynamic matching
+                            // Match cycle classes at Bandra with matching time using dynamic matching
                             if (this.classNamesMatch(classCell, 'cycle') && 
                                 this.matchLocation(locationCell, 'bandra') && 
                                 timeCell) {
@@ -2902,11 +2871,6 @@ class ScheduleUpdater {
                                         const themeTime = this.normalizeTimeFormat(theme.time);
                                         const cellTime = this.normalizeTimeFormat(timeCell);
                                         
-                                        // Debug output for non-matches
-                                        if (rowIndex < structure.headerRows + 20 && this.matchLocation(locationCell, theme.location)) {
-                                            console.log(`🔍 PowerCycle matching for ${theme.day}: normalized cell="${cellTime}" vs normalized theme="${themeTime}" (original cell="${timeCell}", original theme="${theme.time}")`);
-                                        }
-                                        
                                         if (cellTime === themeTime) {
                                             row[colConfig.trainer2Col] = theme.theme;
                                             console.log(`✅ Applied PowerCycle theme: ${theme.theme} to ${theme.day} row ${rowIndex + 1}, col ${colConfig.trainer2Col + 1} (Class: "${classCell}", Time: "${timeCell}", Location: "${locationCell}")`);
@@ -2915,8 +2879,6 @@ class ScheduleUpdater {
                                             this.updateInMemoryClassTheme(theme.day, timeCell, classCell, theme.theme);
                                             
                                             themesApplied++;
-                                        } else if (rowIndex < structure.headerRows + 20 && this.matchLocation(locationCell, theme.location)) {
-                                            console.log(`❌ PowerCycle time mismatch: normalized "${cellTime}" ≠ "${themeTime}"`);
                                         }
                                     }
                                 }
@@ -3993,7 +3955,6 @@ class ScheduleUpdater {
             return /^\d{1,2}:\d{2}\s*(?:AM|PM)$/i.test(this.$(elem).text().trim());
         }).get();
 
-        console.log(`\n🔍 DEBUG: Found ${timeSpans.length} time spans to process`);
         console.log(`📄 Multi-page PDF detected: ${isMultiPagePDF}`);
 
         // Build column clusters by x-position (left). Tolerance ~ 20px
@@ -4150,27 +4111,13 @@ class ScheduleUpdater {
             const $timeSpan = this.$(timeElem);
             const timeText = $timeSpan.text().trim().replace(/\s/g, ' ').trim();
 
-            console.log(`\n  Processing time span #${index + 1}: "${timeText}"`);
-            
             // Determine day by nearest x-position cluster
             const detectedDay = findDayForSpan($timeSpan);
             if (!detectedDay) {
-                console.log('    ⚠ Could not determine day for time span; skipping safe update');
                 return;
             }
 
             const classesForDay = scheduleByDay[detectedDay] || [];
-            
-            // Debug log for Saturday
-            if (detectedDay === 'Saturday' && timeText.includes('11:30')) {
-                console.log(`\n🔍 DEBUG: Saturday 11:30 AM matching`);
-                console.log(`   Available classes for Saturday:`, JSON.stringify(classesForDay.map(c => ({
-                    time: c.time,
-                    class: c.class,
-                    trainer: c.trainer,
-                    notes: c.notes
-                }))));
-            }
             
             // First, scan siblings to get the class name from HTML for better matching
             let htmlClassName = '';
@@ -4192,10 +4139,6 @@ class ScheduleUpdater {
                 tempCurrent = tempCurrent.nextSibling;
             }
             
-            if (detectedDay === 'Saturday' && timeText.includes('11:30')) {
-                console.log(`   HTML className extracted: "${htmlClassName}"`);
-            }
-            
             // Find matching class - prefer exact class name match if available
             let matchingClass = null;
             const timeMatches = classesForDay.filter(c => {
@@ -4210,21 +4153,11 @@ class ScheduleUpdater {
                 return !usedRecordKeys.has(recordKey);
             });
             
-            if (detectedDay === 'Saturday' && timeText.includes('11:30')) {
-                console.log(`   Time matches found: ${timeMatches.length}`);
-                timeMatches.forEach(m => {
-                    console.log(`     - ${m.class} (${m.trainer}): notes="${m.notes}"`);
-                });
-            }
-            
             if (timeMatches.length > 1 && htmlClassName) {
                 // Multiple classes at same time - match by class name too
                 matchingClass = timeMatches.find(c => {
                     const csvClassName = this.normalizeClassName(c.class).toUpperCase();
                     const matches = csvClassName.includes(htmlClassName) || htmlClassName.includes(csvClassName);
-                    if (detectedDay === 'Saturday' && timeText.includes('11:30')) {
-                        console.log(`     Checking class "${c.class}": normalized="${csvClassName}", htmlClassName="${htmlClassName}", match=${matches}`);
-                    }
                     return matches;
                 });
             }
@@ -4232,9 +4165,6 @@ class ScheduleUpdater {
             // If still no match and multiple options, prefer non-sold-out over sold-out
             if (!matchingClass && timeMatches.length > 1) {
                 const nonSoldOut = timeMatches.find(c => !c.notes || !c.notes.includes('SOLD OUT'));
-                if (detectedDay === 'Saturday' && timeText.includes('11:30')) {
-                    console.log(`   No class match found, preferring non-sold-out: ${nonSoldOut ? nonSoldOut.class : 'none found'}`);
-                }
                 if (nonSoldOut) {
                     matchingClass = nonSoldOut;
                 } else {
@@ -4245,10 +4175,6 @@ class ScheduleUpdater {
             // Fall back to first unused time match if no class name match found
             if (!matchingClass && timeMatches.length > 0) {
                 matchingClass = timeMatches[0];
-            }
-
-            if (detectedDay === 'Saturday' && timeText.includes('11:30')) {
-                console.log(`   Final matching class: ${matchingClass ? matchingClass.class + ' (notes: ' + matchingClass.notes + ')' : 'none'}\n`);
             }
 
             if (matchingClass) {
@@ -4266,14 +4192,6 @@ class ScheduleUpdater {
                     return; // Skip this duplicate
                 }
                 
-                console.log(`    ✓ Found matching class in ${detectedDay}: ${matchingClass.class}`);
-                console.log(`    🔍 DEBUG matchingClass:`, JSON.stringify({
-                    class: matchingClass.class,
-                    trainer: matchingClass.trainer,
-                    theme: matchingClass.theme,
-                    time: matchingClass.time
-                }));
-                
                 // Get time span's position to find related content spans
                 const timeSpanStyle = $timeSpan.attr('style') || '';
                 const timeSpanBottomMatch = timeSpanStyle.match(/bottom:\s*([\d.]+)px/);
@@ -4286,8 +4204,6 @@ class ScheduleUpdater {
                 let firstContentSpan = null;
                 let siblingsProcessed = 0;
 
-                console.log(`    Scanning siblings after time span (bottom: ${timeSpanBottom}px)...`);
-                
                 while (current) {
                     siblingsProcessed++;
                     
@@ -4304,16 +4220,12 @@ class ScheduleUpdater {
                         const currentLeftMatch = currentStyle.match(/left:\s*([\d.]+)px/);
                         const currentLeft = currentLeftMatch ? parseFloat(currentLeftMatch[1]) : 0;
                         
-                        console.log(`      Sibling #${siblingsProcessed}: <span${spanId ? ' id="'+spanId+'"' : ''}${spanClass ? ' class="'+spanClass+'"' : ''}> text: "${spanText.substring(0, 50)}${spanText.length > 50 ? '...' : ''}" (bottom: ${currentBottom}px, left: ${currentLeft}px)`);
-                        
                         if (/^\d{1,2}:\d{2}\s*(?:AM|PM)$/i.test(spanText)) {
-                            console.log(`      ↳ Next time span found, stopping scan`);
                             break; // Stop at the next time span
                         }
                         
                         // Check if this is a header/protected element
                         if (this.isHeaderElement($currentSpan)) {
-                            console.log(`      ↳ PROTECTED HEADER ELEMENT - stopping scan to preserve`);
                             break;
                         }
                         
@@ -4333,29 +4245,20 @@ class ScheduleUpdater {
                         // OR if it's in the same row and appears to be part of the class info
                         if (!firstContentSpan) {
                             firstContentSpan = $currentSpan;
-                            console.log(`      ↳ Marked as firstContentSpan (class content)`);
                             // For the first span, we'll replace its content entirely, so always add to removal list
                             spansToRemove.push($currentSpan);
-                            console.log(`      ↳ First span will be replaced with updated content`);
                         } else if (sameRow && (isTrainerSpan || spanText.length === 0)) {
                             // Same row trainer span or empty span - mark for removal
                             spansToRemove.push($currentSpan);
-                            console.log(`      ↳ Same-row trailing span (trainer or empty), added to removal list`);
                         } else if (hasThemeClass || hasOldTheme || hasOldThemeText) {
                             // Remove subsequent spans only if they contain actual theme badge content
                             spansToRemove.push($currentSpan);
-                            console.log(`      ↳ Subsequent span contains theme badge content (class: ${hasThemeClass}, emoji: ${hasOldTheme}, text: ${hasOldThemeText}), added to removal list`);
-                        } else {
-                            console.log(`      ↳ Clean subsequent span, keeping unchanged`);
                         }
                     } else if (current.type === 'tag' && current.name !== 'span') {
-                        console.log(`      Sibling #${siblingsProcessed}: <${current.name}> (non-span tag) - stopping scan`);
                         break;
                     }
                     current = current.nextSibling;
                 }
-
-                console.log(`    Summary: ${spansToRemove.length} spans marked for removal`);
 
                 if (firstContentSpan && spansToRemove.length > 0) {
                     const normalizedCSVClass = this.normalizeClassName(matchingClass.class);
@@ -4379,8 +4282,6 @@ class ScheduleUpdater {
                     if (matchingClass.theme && matchingClass.theme.trim()) {
                         themeBadge = this.createThemeBadge(matchingClass.theme.trim(), this.currentLocation);
                     }
-
-                    console.log(`    Creating new span with text: "${newText}" and theme: "${matchingClass.theme}"`);
 
                     // Create a new span with the content, preserving the original's attributes
                     const newSpan = firstContentSpan.clone().text(newText);
@@ -4418,23 +4319,16 @@ class ScheduleUpdater {
 
                     // Insert the new span after the time span
                     $timeSpan.after(newSpan);
-                    console.log(`    ✓ New span inserted after time span`);
 
                     // Remove all the old content spans
                     spansToRemove.forEach(($span, idx) => {
-                        console.log(`    Removing span #${idx + 1}...`);
                         $span.remove();
                     });
-                    console.log(`    ✓ ${spansToRemove.length} spans removed`);
                     
                     // Mark this combination as updated
                     updatedCombos.add(combinationKey);
                     updateCount++;
-                } else {
-                    console.log(`    ⚠ No content span found after time span`);
                 }
-            } else {
-                console.log(`    ✗ No matching class found for ${detectedDay} at time: "${timeText}"`);
             }
         });
 
@@ -4558,10 +4452,6 @@ class ScheduleUpdater {
                         // Preserve any child elements (like theme badges and sold-out badges)
                         const childBadges = $span.find('.theme-badge, .sold-out-badge').clone();
                         const hasSoldOut = $span.find('.sold-out-badge').length > 0;
-                        
-                        if (text.includes('BARRE 57')) {
-                            console.log(`    DEBUG BARRE 57: childBadges.length=${childBadges.length}, hasSoldOut=${hasSoldOut}`);
-                        }
                         
                         $span.text(newText);
                         
@@ -4746,29 +4636,7 @@ class ScheduleUpdater {
 
     save() {
         console.log('\n💾 Saving updated HTML...');
-        
-        // DEBUG: Count PDF-related elements after processing
-        console.log('\n🔍 DEBUG: PDF Elements Count After Processing:');
-        console.log('  - <script> tags:', this.$('script').length);
-        console.log('  - <div id="pg1">:', this.$('#pg1').length);
-        console.log('  - <div id="pg2">:', this.$('#pg2').length);
-        console.log('  - <img id="pdf1">:', this.$('#pdf1').length);
-        console.log('  - <img id="pdf2">:', this.$('#pdf2').length);
-        console.log('  - metadata script:', this.$('script#metadata').length);
-        console.log('  - annotations script:', this.$('script#annotations').length);
-        console.log('  - Total spans:', this.$('span').length);
-        
         const updatedHTML = this.$.html();
-        
-        // DEBUG: Check if PDF elements exist in final HTML string
-        console.log('\n🔍 DEBUG: PDF Elements in Final HTML String:');
-        console.log('  - Contains "pg1":', updatedHTML.includes('id="pg1"'));
-        console.log('  - Contains "pg2":', updatedHTML.includes('id="pg2"'));
-        console.log('  - Contains "pdf1":', updatedHTML.includes('id="pdf1"'));
-        console.log('  - Contains "pdf2":', updatedHTML.includes('id="pdf2"'));
-        console.log('  - Contains "metadata":', updatedHTML.includes('id="metadata"'));
-        console.log('  - Contains "annotations":', updatedHTML.includes('id="annotations"'));
-        
         fs.writeFileSync(this.outputPath, updatedHTML, 'utf-8');
         console.log(`✅ Saved to: ${this.outputPath}`);
     }
@@ -5253,7 +5121,7 @@ class ScheduleUpdater {
     }
 
     /**
-     * Log covers found in spreadsheet for debugging
+    * Log covers found in spreadsheet
      */
     logSpreadsheetCovers(sheetData) {
         if (!sheetData || sheetData.length < 5) {
@@ -5297,7 +5165,7 @@ class ScheduleUpdater {
     }
 
     /**
-     * Log covers from email body for debugging
+    * Log covers from email body
      */
     logEmailCovers(covers) {
         if (!covers || covers.length === 0) {
@@ -5777,14 +5645,6 @@ class ScheduleUpdater {
             }
             
             console.log(`📝 Writing ${rows.length - 1} total cover entries to Covers sheet`);
-            
-            // Debug: Show sample email covers being written
-            console.log('\n📋 Sample email covers being written:');
-            const emailRows = rows.filter(r => r[0] === 'email').slice(0, 10);
-            for (const row of emailRows) {
-                console.log(`  ${row[0]} | ${row[1]} | ${row[2]} | ${row[3]} | ${row[4]} | ${row[6]}`);
-            }
-            console.log('');
             
             // Write to Covers sheet
             await sheets.spreadsheets.values.update({
