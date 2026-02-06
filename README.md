@@ -9,6 +9,15 @@ An automated system for managing and updating class schedules, integrating with 
 - 📧 Email notifications with PDF attachments
 - 🎨 Theme-based styling (PowerCycle, Total, Core Yoga)
 - 📊 Google Sheets integration for real-time data
+- 🚫 **Sold Out marking** - Set theme to "Sold Out" to add red strikethrough and badge
+
+### Sold Out Feature
+
+Mark classes as sold out by setting the **Theme** column to `Sold Out` in the Google Sheets "Cleaned" tab. This will:
+- Add a red strikethrough line across the class row
+- Display a red "SOLD OUT" badge next to the class name
+
+See [SOLD_OUT_FEATURE.md](SOLD_OUT_FEATURE.md) for detailed usage instructions.
 
 ## Setup
 
@@ -49,17 +58,50 @@ Follow the prompts to authorize the application and generate refresh tokens.
 
 ## Usage
 
-### Update HTML Only
+### Full Workflow (Email + Sheets + HTML)
+
+Processes email, updates Google Sheets, then generates HTML and PDF:
+
+```bash
+npm run update
+# or
+node updateKempsSchedule.js
+```
+
+### HTML-Only Update (Skip Email Processing)
+
+Use existing data in the Cleaned sheet to update HTML and PDF without processing emails:
+
+```bash
+npm run update:html-only
+# or
+npm run update:skip-email
+# or
+node updateKempsSchedule.js --skip-email
+```
+
+**When to use HTML-only mode:**
+- Data is already in the Cleaned sheet
+- You want to regenerate HTML/PDF without re-processing emails
+- Making manual adjustments to the Cleaned sheet
+- Faster updates when email data hasn't changed
+
+### Help and Options
+
+View all available options:
+
+```bash
+node updateKempsSchedule.js --help
+```
+
+### Legacy Scripts
+
+Update HTML only (deprecated - use `--skip-email` flag instead):
 ```bash
 node updateHTMLOnly.js
 ```
 
-### Update Kemps Schedule (with email)
-```bash
-node updateKempsSchedule.js
-```
-
-### Complete Schedule Update
+Complete schedule update:
 ```bash
 node completeScheduleUpdate.js
 ```

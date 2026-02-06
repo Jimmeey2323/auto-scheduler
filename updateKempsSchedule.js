@@ -3312,6 +3312,11 @@ class ScheduleUpdater {
             'Sunday': []
         };
 
+        console.log(`📊 Processing ${this.kwalityClasses.length} classes from kwalityClasses array...`);
+        if (this.kwalityClasses.length > 0) {
+            console.log(`📋 Sample classData keys:`, Object.keys(this.kwalityClasses[0]));
+        }
+        
         this.kwalityClasses.forEach(classData => {
             // Normalize day value to Title Case keys used in scheduleByDay
             const rawDay = String(classData.Day || classData.day || classData.DayName || '').trim();
@@ -3337,10 +3342,10 @@ class ScheduleUpdater {
                 }
                 
                 scheduleByDay[day].push({
-                    time: this.normalizeTime(classData.Time),
-                    class: classData.Class,
-                    trainer: classData.Trainer,
-                    notes: classData.Notes || '',
+                    time: this.normalizeTime(classData.Time || classData.time || ''),
+                    class: classData.Class || classData.class || '',
+                    trainer: classData.Trainer || classData.trainer || '',
+                    notes: classData.Notes || classData.notes || '',
                     theme: theme.trim() // Add theme information
                 });
             }
@@ -3716,7 +3721,15 @@ class ScheduleUpdater {
                 const className = this.formatClassName(this.normalizeClassName(classData.class)).replace(/^STUDIO\s+/i, '');
                 const trainerName = this.getTrainerFirstName(classData.trainer).toUpperCase();
                 const theme = classData.theme || '';
-                const isSoldOut = classData.notes && classData.notes.includes('SOLD OUT');
+                
+                // Debug logging to verify data
+                console.log(`  📝 [${dayName}] ${time} - Class: "${className}", Trainer: "${trainerName}", Theme: "${theme}"`);
+                if (!className || !trainerName) {
+                    console.warn(`  ⚠️  Empty values detected - classData:`, classData);
+                }
+                // Check if sold out - either from notes or theme
+                const isSoldOut = (classData.notes && classData.notes.includes('SOLD OUT')) || 
+                                  (theme && theme.toLowerCase().trim() === 'sold out');
 
                 // Create time span with normalized time
                 const timeSpanHtml = `<span class="t s9" style="left:${dayLeft}px;bottom:${currentBottom}px;">${time}</span>`;
@@ -3729,7 +3742,8 @@ class ScheduleUpdater {
                 
                 // Build badge HTML
                 let badgeHtml = '';
-                if (theme && theme.trim()) {
+                // Only add theme badge if it's not "Sold Out" (sold out badge added separately)
+                if (theme && theme.trim() && theme.toLowerCase().trim() !== 'sold out') {
                     badgeHtml += this.createThemeBadge(theme.trim(), this.currentLocation);
                 }
                 if (isSoldOut) {
@@ -5040,15 +5054,20 @@ class ScheduleUpdater {
 
     /**
      * Complete workflow: Email processing -> Google Sheets -> HTML/PDF (No CSV dependency)
+     * @param {boolean} skipEmail - If true, skip email processing and use existing Cleaned sheet data
      */
-    async completeGoogleSheetsWorkflow() {
+    async completeGoogleSheetsWorkflow(skipEmail = false) {
         console.log('🚀 Starting complete Google Sheets workflow (no CSV)...');
         
         try {
-            // STEP 1: Process email and update Google Sheets
-            console.log('📧 Step 1: Processing email and updating Google Sheets...');
-            await this.processEmailAndUpdateSchedule();
-            console.log('✅ Google Sheets updated with email data\n');
+            if (skipEmail) {
+                console.log('⏭️  Skipping email processing - using existing Cleaned sheet data\n');
+            } else {
+                // STEP 1: Process email and update Google Sheets
+                console.log('📧 Step 1: Processing email and updating Google Sheets...');
+                await this.processEmailAndUpdateSchedule();
+                console.log('✅ Google Sheets updated with email data\n');
+            }
             
             // STEP 2: Update HTML and PDF directly from Google Sheets
             console.log('📄 Step 2: Updating HTML and generating PDF from Google Sheets...');
@@ -5950,6 +5969,24 @@ if (typeof require !== 'undefined' && require.main === module) {
 let __filename = typeof fileURLToPath === 'function' ? fileURLToPath(import.meta.url) : undefined;
 let __dirname = __filename ? path.dirname(__filename) : undefined;
 if (isMain) {
+    // Check for command-line flags
+    const args = process.argv.slice(2);
+    const skipEmail = args.includes('--skip-email') || args.includes('--html-only');
+    
+    // Show help if requested
+    if (args.includes('--help') || args.includes('-h')) {
+        console.log('\n📋 Usage: node updateKempsSchedule.js [options]\n');
+        console.log('Options:');
+        console.log('  --skip-email, --html-only   Skip email processing, use existing Cleaned sheet data');
+        console.log('  --help, -h                  Show this help message\n');
+        console.log('Examples:');
+        console.log('  node updateKempsSchedule.js                    # Full workflow (email + sheets + HTML)');
+        console.log('  node updateKempsSchedule.js --skip-email       # Skip email, update HTML from existing data');
+        console.log('  npm run update                                 # Full workflow');
+        console.log('  npm run update -- --skip-email                 # Skip email via npm\n');
+        process.exit(0);
+    }
+    
     // Read from backup (clean template) and write to Kemps.html
     const backupPath = path.join(__dirname, 'Kemps.backup.html');
     const htmlPath = fs.existsSync(backupPath) ? backupPath : path.join(__dirname, 'Kemps.html');
@@ -5957,6 +5994,10 @@ if (isMain) {
     
     console.log(`📄 Source file: ${path.basename(htmlPath)}`);
     console.log(`📄 Output file: ${path.basename(outputPath)}`);
+    
+    if (skipEmail) {
+        console.log('⏭️  Mode: Skip email processing (using existing Cleaned sheet data)\n');
+    }
 
     const updater = new ScheduleUpdater(htmlPath, outputPath); // No CSV needed
     
@@ -5966,13 +6007,16 @@ if (isMain) {
             console.log('📊 No CSV files will be used - all data from Google Sheets');
             
             // Use the complete Google Sheets workflow
-            await updater.completeGoogleSheetsWorkflow();
+            await updater.completeGoogleSheetsWorkflow(skipEmail);
             
             // Optional: Also update Bandra if needed
             console.log('\n📄 Updating Bandra schedule...');
             await updater.updateBandra();
             
             console.log('\n✨ All tasks completed successfully!');
+            if (skipEmail) {
+                console.log('📄 Mode: HTML-only update (email processing skipped)');
+            }
             console.log('📄 Generated files:');
             console.log('   - Kemps.html (updated from Google Sheets)');
             console.log('   - Kemps_Updated.pdf (uploaded to Drive)');

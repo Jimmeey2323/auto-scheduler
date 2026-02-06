@@ -6,6 +6,8 @@
   "main": "updateKempsSchedule.js",
   "scripts": {
     "update": "node updateKempsSchedule.js",
+    "update:html-only": "node updateKempsSchedule.js --skip-email",
+    "update:skip-email": "node updateKempsSchedule.js --skip-email",
     "test": "echo \"No tests configured\""
   },
   "keywords": [
