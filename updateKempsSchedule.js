@@ -8,6 +8,7 @@ import { google } from 'googleapis';
 import axios from 'axios';
 import { PDFDocument } from 'pdf-lib';
 import 'dotenv/config';
+import OpenAI from 'openai';
 
 // Enhanced Schedule Mapping System
 import EnhancedScheduleMapper from './enhancedScheduleMapper.js';
@@ -72,6 +73,305 @@ class ScheduleUpdater {
         
         // Initialize enhanced mapping system
         this.enhancedMapper = new EnhancedScheduleMapper();
+        
+        // Initialize AI parser
+        this.initializeAIParser();
+    }
+
+    /**
+     * Initialize OpenAI client for AI-powered email parsing
+     */
+    initializeAIParser() {
+        if (process.env.OPENAI_API_KEY) {
+            this.openai = new OpenAI({
+                apiKey: process.env.OPENAI_API_KEY
+            });
+            this.aiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+            this.aiEnabled = true;
+            console.log('✅ AI Email Parser initialized with model:', this.aiModel);
+        } else {
+            this.aiEnabled = false;
+            console.log('ℹ️  AI Email Parser disabled (OPENAI_API_KEY not set)');
+        }
+    }
+
+    /**
+     * Parse email thread using AI (GPT-4)
+     */
+    async parseEmailWithAI(emailMessages, isFirstEmail = false) {
+        if (!this.aiEnabled) {
+            return null;
+        }
+
+        console.log('\n🤖 AI Email Parser: Analyzing email thread...');
+        console.log(`📧 Processing ${emailMessages.length} message(s)`);
+
+        try {
+            const fullThread = emailMessages.join('\n\n---MESSAGE SEPARATOR---\n\n');
+            
+            // Parse different types of information in parallel
+            const [covers, themes, changes] = await Promise.all([
+                isFirstEmail ? Promise.resolve([]) : this.aiParseCovers(fullThread),
+                this.aiParseThemes(fullThread),
+                this.aiParseChanges(fullThread)
+            ]);
+
+            const result = {
+                covers: covers || [],
+                themes: themes || [],
+                changes: changes || [],
+                aiParsed: true
+            };
+
+            console.log(`✅ AI Parsing Complete:`);
+            console.log(`   📝 Covers: ${result.covers.length}`);
+            console.log(`   🎨 Themes: ${result.themes.length}`);
+            console.log(`   🔄 Changes: ${result.changes.length}`);
+
+            return result;
+
+        } catch (error) {
+            console.error('❌ AI parsing error:', error.message);
+            return null;
+        }
+    }
+
+    /**
+     * AI: Extract cover information
+     */
+    async aiParseCovers(emailContent) {
+        const prompt = `Extract class cover/substitution information from this email thread.
+
+A cover is when one trainer substitutes for another trainer.
+
+Return a JSON object with this structure:
+{
+  "covers": [
+    {
+      "day": "Monday",
+      "time": "7:30 AM",
+      "location": "Kemps",
+      "class": "Barre 57",
+      "originalTrainer": "Pranjali",
+      "coverTrainer": "Rohan"
+    }
+  ]
+}
+
+If no covers found, return: {"covers": []}
+
+Known locations: Kemps, Bandra, Annex, Kwality House, Supreme HQ
+Known trainers: Mrigakshi, Anisha, Pranjali, Richard, Rohan, Karan, Simonelle, Reshma, Cauveri, Vivaran, Atulan, Raunak, Bret, Anmol, Simran
+
+Email thread:
+${emailContent.substring(0, 8000)}
+
+Return ONLY valid JSON, no other text.`;
+
+        try {
+            const response = await this.openai.chat.completions.create({
+                model: this.aiModel,
+                messages: [
+                    { role: 'system', content: 'You are a precise schedule data extractor. Always return valid JSON.' },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.1,
+                response_format: { type: 'json_object' }
+            });
+
+            const parsed = JSON.parse(response.choices[0].message.content);
+            return parsed.covers || [];
+        } catch (error) {
+            console.error('   ❌ AI cover parsing failed:', error.message);
+            return [];
+        }
+    }
+
+    /**
+     * AI: Extract theme information
+     */
+    async aiParseThemes(emailContent) {
+        const prompt = `Extract ALL fitness class themes from this email thread including PowerCycle, Amped Up, FIT, and Bandra cycle themes.
+
+Look for patterns like:
+- "Power Cycle themes:" followed by location sections (Bandra, Kemps)
+- "Amped Up theme:" with day-theme pairs
+- "FIT Theme:" with weekly themes
+- "Bandra cycle themes:" with day-theme pairs
+
+Return a JSON object with this structure:
+{
+  "themes": [
+    {
+      "day": "Monday",
+      "time": "8:00 AM",
+      "location": "Kemps",
+      "classType": "PowerCycle",
+      "theme": "Lady Gaga vs Bruno Mars"
+    },
+    {
+      "day": "Tuesday",
+      "time": "",
+      "location": "Kemps",
+      "classType": "Amped Up",
+      "theme": "Heart Rate & Heartbreak"
+    }
+  ]
+}
+
+If no themes found, return: {"themes": []}
+
+Common theme names: Lady Gaga vs Bruno Mars, Rihanna + Friends, Teen Crush, Love Pop, Heart Rate & Heartbreak, Taylor Swift, Super Sets, Tabata
+Known class types: PowerCycle, Amped Up, CYCLE, FIT
+Known locations: Kemps, Bandra, Annex, Kwality House, Supreme HQ
+
+Email thread:
+${emailContent.substring(0, 12000)}
+
+Return ONLY valid JSON, no other text.`;
+
+        try {
+            const response = await this.openai.chat.completions.create({
+                model: this.aiModel,
+                messages: [
+                    { role: 'system', content: 'You are a precise schedule data extractor. Always return valid JSON.' },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.1,
+                response_format: { type: 'json_object' }
+            });
+
+            const parsed = JSON.parse(response.choices[0].message.content);
+            const themes = parsed.themes || [];
+            
+            if (themes.length > 0) {
+                console.log('\n📋 AI EXTRACTED THEMES:');
+                console.log('='.repeat(80));
+                themes.forEach((theme, idx) => {
+                    const timeStr = theme.time ? ` ${theme.time}` : '';
+                    const locationStr = theme.location ? ` at ${theme.location}` : '';
+                    console.log(`${idx + 1}. [${theme.classType}] ${theme.day}${timeStr}${locationStr}: "${theme.theme}"`);
+                });
+                console.log('='.repeat(80) + '\n');
+            } else {
+                console.log('\n⚠️  AI found no themes in email thread\n');
+            }
+            
+            return themes;
+        } catch (error) {
+            console.error('   ❌ AI theme parsing failed:', error.message);
+            return [];
+        }
+    }
+
+    /**
+     * AI: Extract schedule changes (sold out, cancellations, time changes)
+     */
+    async aiParseChanges(emailContent) {
+        const prompt = `Extract schedule changes from this email thread.
+
+Look for:
+- Classes marked as "sold out"
+- Cancellations
+- Time changes
+- Location changes
+- Trainer changes (permanent, not covers)
+
+Return a JSON object:
+{
+  "changes": [
+    {
+      "type": "sold_out",
+      "day": "Monday",
+      "time": "7:30 AM",
+      "location": "Kemps",
+      "class": "Barre 57",
+      "description": "Class marked as sold out"
+    }
+  ]
+}
+
+Valid types: sold_out, cancellation, time_change, location_change, trainer_change
+
+If no changes found, return: {"changes": []}
+
+Email thread:
+${emailContent.substring(0, 8000)}
+
+Return ONLY valid JSON, no other text.`;
+
+        try {
+            const response = await this.openai.chat.completions.create({
+                model: this.aiModel,
+                messages: [
+                    { role: 'system', content: 'You are a precise schedule data extractor. Always return valid JSON.' },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.1,
+                response_format: { type: 'json_object' }
+            });
+
+            const parsed = JSON.parse(response.choices[0].message.content);
+            
+            // Log changes for visibility
+            if (parsed.changes && parsed.changes.length > 0) {
+                console.log('   🔍 AI detected changes:');
+                parsed.changes.forEach((change, idx) => {
+                    console.log(`      ${idx + 1}. [${change.type}] ${change.day} ${change.time} - ${change.description}`);
+                });
+            }
+            
+            return parsed.changes || [];
+        } catch (error) {
+            console.error('   ❌ AI change parsing failed:', error.message);
+            return [];
+        }
+    }
+
+    /**
+     * Apply AI-detected changes to schedule data
+     */
+    applyAIChangesToSchedule(scheduleData, changes) {
+        if (!changes || changes.length === 0) {
+            return scheduleData;
+        }
+
+        console.log(`\n🔄 Applying ${changes.length} AI-detected changes to schedule...`);
+        const updatedData = [...scheduleData];
+        let appliedCount = 0;
+
+        for (const change of changes) {
+            // Find matching class
+            const matchIndex = updatedData.findIndex(item => {
+                const dayMatch = item.Day && item.Day.toLowerCase().includes(change.day.toLowerCase());
+                const timeMatch = this.normalizeTime(item.Time || '') === this.normalizeTime(change.time || '');
+                const locationMatch = !change.location || 
+                    (item.Location && item.Location.toLowerCase().includes(change.location.toLowerCase()));
+                
+                return dayMatch && timeMatch && locationMatch;
+            });
+
+            if (matchIndex >= 0) {
+                const item = updatedData[matchIndex];
+                
+                switch (change.type) {
+                    case 'sold_out':
+                        item.Theme = 'Sold Out';
+                        console.log(`   ✅ Marked sold out: ${change.day} ${change.time} ${change.class}`);
+                        appliedCount++;
+                        break;
+                        
+                    case 'cancellation':
+                        item.Notes = (item.Notes || '') + ' CANCELLED';
+                        console.log(`   ✅ Marked cancelled: ${change.day} ${change.time} ${change.class}`);
+                        appliedCount++;
+                        break;
+                }
+            }
+        }
+
+        console.log(`✅ Successfully applied ${appliedCount}/${changes.length} changes`);
+        return updatedData;
     }
 
     /**
@@ -389,7 +689,10 @@ class ScheduleUpdater {
             
             console.log(`📧 Email type: ${isFirstEmail ? 'FIRST EMAIL (using spreadsheet covers only)' : 'SUBSEQUENT EMAIL (using email body covers)'}`);
             
-            const emailInfo = this.parseEmailForScheduleInfo(emailData.allMessages, isFirstEmail);
+            const emailInfo = await this.parseEmailForScheduleInfo(emailData.allMessages, isFirstEmail);
+            
+            // Add the email subject to emailInfo for date calculation
+            emailInfo.subject = emailData.subject;
             
             console.log(`✅ Parsed ${emailInfo.covers.length} covers and ${emailInfo.themes.length} themes from email`);
             
@@ -757,8 +1060,49 @@ class ScheduleUpdater {
      * @param {Array} allMessages - Array of email message bodies
      * @param {Boolean} isFirstEmail - If true, only extract themes (covers come from spreadsheet)
      */
-    parseEmailForScheduleInfo(allMessages, isFirstEmail = true) {
+    async parseEmailForScheduleInfo(allMessages, isFirstEmail = true) {
         console.log('🔍 Parsing email content for schedule information...');
+        
+        // Use AI parsing exclusively for theme detection if enabled
+        if (this.aiEnabled) {
+            try {
+                const aiResult = await this.parseEmailWithAI(allMessages, isFirstEmail);
+                
+                if (aiResult && aiResult.aiParsed) {
+                    console.log('✅ Using AI-parsed results EXCLUSIVELY for themes');
+                    console.log(`🎨 AI extracted ${aiResult.themes.length} themes`);
+                    
+                    // Only get covers and hosted classes from regex if needed
+                    const regexResult = await this.parseEmailForScheduleInfoRegex(allMessages, isFirstEmail, true); // Skip themes
+                    
+                    return {
+                        covers: aiResult.covers.length > 0 ? aiResult.covers : regexResult.covers,
+                        themes: aiResult.themes, // AI themes ONLY - no regex themes
+                        changes: aiResult.changes,
+                        hostedClasses: regexResult.hostedClasses,
+                        aiParsed: true
+                    };
+                }
+            } catch (error) {
+                console.warn('⚠️  AI parsing failed, using regex fallback:', error.message);
+            }
+        }
+
+        // Fallback to regex-based parsing
+        return this.parseEmailForScheduleInfoRegex(allMessages, isFirstEmail);
+    }
+
+    /**
+     * Regex-based email parsing (original implementation)
+     * @param {Array} allMessages - Array of email message bodies
+     * @param {Boolean} isFirstEmail - If true, only extract themes (covers come from spreadsheet)
+     */
+    async parseEmailForScheduleInfoRegex(allMessages, isFirstEmail = true, skipThemes = false) {
+        console.log('🔍 Parsing email content for schedule information...');
+        console.log(`📧 Total messages in thread: ${(allMessages || []).length}`);
+        if (skipThemes) {
+            console.log('🎨 Skipping theme extraction - AI handling themes exclusively');
+        }
         
         const result = {
             covers: [],
@@ -766,17 +1110,35 @@ class ScheduleUpdater {
             hostedClasses: []
         };
         
-        // Combine all messages for parsing
-        const rawContent = (allMessages || []).join('\n\n');
-        const fullContent = rawContent.replace(/\r\n/g, '\n');
-        console.log('📧 Email content length:', fullContent.length);
-        console.log('📧 First 500 chars:', fullContent.substring(0, 500));
+        // CRITICAL: Parse covers and themes from most recent SCHEDULE EMAIL THREAD
+        // We want the most recent schedule email thread, but themes/covers could be in ANY message within that thread
+        let fullContent = '';
+        let mostRecentMessageIndex = -1;
+        
+        if (allMessages && allMessages.length > 0) {
+            // For covers parsing, still use the most recent message in the thread
+            mostRecentMessageIndex = allMessages.length - 1;
+            fullContent = allMessages[mostRecentMessageIndex].replace(/\r\n/g, '\n');
+            
+            console.log('\n' + '='.repeat(80));
+            console.log('📧 USING MOST RECENT SCHEDULE EMAIL THREAD');
+            console.log(`📧 Thread has ${allMessages.length} messages total`);
+            console.log(`📧 Most recent message (#${mostRecentMessageIndex + 1}) content length: ${fullContent.length}`);
+            console.log('📧 Most recent message preview:', fullContent.substring(0, 400));
+            console.log('='.repeat(80) + '\n');
+        } else {
+            console.log('⚠️  No messages found in thread');
+            return result;
+        }
         
         // Parse covers section ONLY if this is NOT the first email
         // First email: covers come from spreadsheet
         // Subsequent emails: covers come from email body (changes/updates)
         if (!isFirstEmail) {
-            console.log('🔍 Parsing covers from email body (subsequent email)...');
+            console.log('\n' + '='.repeat(80));
+            console.log('🔍 PARSING COVERS FROM MOST RECENT MESSAGE (subsequent email)');
+            console.log('='.repeat(80) + '\n');
+            
             // Parse covers section - improved regex to capture entire section
             // The covers section typically goes from "Covers :" until the next major section like "Amped Up theme" or "Bandra cycle themes"
             const coversMatch = fullContent.match(/Covers\s*:?\s*([\s\S]*?)(?=\n\s*(?:Amped Up theme|Bandra cycle themes|FIT theme|Best,\s*$))/i);
@@ -785,7 +1147,7 @@ class ScheduleUpdater {
                 console.log('🎯 Covers preview:', coversMatch[1].substring(0, 300));
                 result.covers = this.parseCoversSection(coversMatch[1]);
             } else {
-                console.log('❌ No covers section found');
+                console.log('❌ No covers section found in most recent message');
                 console.log('🔍 Looking for alternative covers pattern...');
                 
                 // Try alternative pattern - capture everything between "Covers" and next section
@@ -796,7 +1158,7 @@ class ScheduleUpdater {
                 }
             }
         } else {
-            console.log('ℹ️  Skipping email body covers parsing (first email - using spreadsheet covers only)');
+            console.log('\nℹ️  Skipping email body covers parsing (first email - using spreadsheet covers only)\n');
         }
         
         // Parse themes sections - using simpler approach to avoid matchAll issues
@@ -831,60 +1193,85 @@ class ScheduleUpdater {
             themeSections.push({ type: 'FIT', content: `All classes, all week - ${fitThemeName}` });
         }
         
-        // PowerCycle Themes: Enhanced extraction using AI-powered parsing and thread scanning
-        let extractedPowerCycleThemes = [];
-        
-        console.log('🚴 Extracting PowerCycle themes using enhanced thread scanning...');
-        
-        // Use enhanced mapper to scan entire email thread for themes
-        extractedPowerCycleThemes = this.enhancedMapper.extractPowerCycleThemes(allMessages || []);
-        
-        // Also check if there's a direct PowerCycle section for backward compatibility
-        const powercycle_themes = fullContent.match(/POWER CYCLE THEMES\\s*:\\s*(.*?)(?=\\n\\s*(?:Thanks,|Best,|Thanks\\s+and\\s+regards|Warm\\s+Regards|Regards,|On\\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)|\\n--\\s*\\n|$))/is);
-        
-        if (powercycle_themes) {
-            let powercycleContent = powercycle_themes[1].trim();
-            // Clean up content and remove email signatures
-            powercycleContent = powercycleContent.split(/Thanks,|Thanks\\s+and\\s+regards|Warm\\s+Regards|Regards,/i)[0].trim();
-            console.log('📧 Found PowerCycle section in main content as well');
+        // PowerCycle Themes: Skip regex extraction if AI is handling themes
+        if (!skipThemes) {
+            let extractedPowerCycleThemes = [];
             
-            themeSections.push({ type: 'PowerCycle', content: powercycleContent });
-        }
-        
-        if (extractedPowerCycleThemes.length === 0) {
-            console.log('⚠️ No PowerCycle themes found in email thread - using default themes');
-            extractedPowerCycleThemes = this.enhancedMapper.getDefaultPowerCycleThemes();
-        }
-        
-        // Store extracted themes for later mapping
-        this.extractedPowerCycleThemes = extractedPowerCycleThemes;
-        
-        // Add PowerCycle themes directly to result (they're already parsed by enhancedMapper)
-        if (extractedPowerCycleThemes.length > 0) {
-            console.log(`🚴 Adding ${extractedPowerCycleThemes.length} extracted PowerCycle themes to result`);
-            result.themes.push(...extractedPowerCycleThemes);
+            console.log('\n' + '='.repeat(80));
+            console.log('🚴 EXTRACTING POWERCYCLE THEMES FROM ALL MESSAGES IN MOST RECENT THREAD (REGEX)');
+            console.log('='.repeat(80));
+            
+            // CORRECTED: Search through ALL messages in the most recent thread
+            // The thread itself is the most recent, but themes could be in any message within it
+            console.log(`📧 Analyzing ALL ${allMessages.length} messages in most recent thread for PowerCycle themes:`);
+            
+            allMessages.forEach((message, idx) => {
+                console.log(`   Message ${idx + 1}: ${message.substring(0, 100).replace(/\n/g, ' ')}...`);
+            });
+            console.log('');
+            
+            // Use enhanced mapper with ALL messages from the most recent thread
+            extractedPowerCycleThemes = this.enhancedMapper.extractPowerCycleThemes(allMessages);
+            
+            console.log(`\n🔍 PowerCycle extraction result: ${extractedPowerCycleThemes.length} themes found`);
+            
+            if (extractedPowerCycleThemes.length > 0) {
+                console.log('\n📋 EXTRACTED POWERCYCLE THEMES FROM MOST RECENT EMAIL THREAD:');
+                console.log('='.repeat(80));
+                extractedPowerCycleThemes.forEach((theme, idx) => {
+                    console.log(`${idx + 1}. ${theme.day} ${theme.time} at ${theme.location}: "${theme.theme}"`);
+                });
+                console.log('='.repeat(80) + '\n');
+            } else {
+                console.log('\n⚠️  NO PowerCycle themes found in most recent email thread');
+                console.log('🔍 Falling back to DEFAULT themes (this may be incorrect!)\n');
+                extractedPowerCycleThemes = this.enhancedMapper.getDefaultPowerCycleThemes();
+                
+                console.log('\n📋 USING DEFAULT POWERCYCLE THEMES:');
+                console.log('='.repeat(80));
+                extractedPowerCycleThemes.forEach((theme, idx) => {
+                    console.log(`${idx + 1}. ${theme.day} ${theme.time} at ${theme.location}: "${theme.theme}"`);
+                });
+                console.log('='.repeat(80) + '\n');
+            }
+            
+            // Store extracted themes for later mapping
+            this.extractedPowerCycleThemes = extractedPowerCycleThemes;
+            
+            // Add PowerCycle themes directly to result (they're already parsed by enhancedMapper)
+            if (extractedPowerCycleThemes.length > 0) {
+                result.themes.push(...extractedPowerCycleThemes);
+            }
+        } else {
+            console.log('\n🎨 Skipping regex PowerCycle theme extraction - AI is handling themes');
         }
         
         console.log(`📊 Found ${themeSections.length} theme sections`);
         
-        for (const section of themeSections) {
-            console.log(`🎨 Processing ${section.type} themes`);
-            const themes = this.parseThemesSection(section.type, section.content);
-            result.themes.push(...themes);
+        if (!skipThemes) {
+            for (const section of themeSections) {
+                console.log(`🎨 Processing ${section.type} themes`);
+                const themes = this.parseThemesSection(section.type, section.content);
+                result.themes.push(...themes);
+            }
+        } else {
+            console.log('🎨 Skipping regex theme section processing - AI is handling themes');
         }
         
-        // Deduplicate themes by creating a unique key for each theme
-        const seenThemes = new Set();
-        result.themes = result.themes.filter(theme => {
-            const key = `${theme.day}|${theme.time || ''}|${theme.theme}|${theme.classType || ''}`;
-            if (seenThemes.has(key)) {
-                return false; // Skip duplicate
-            }
-            seenThemes.add(key);
-            return true;
-        });
-        
-        console.log(`📊 After deduplication: ${result.themes.length} unique themes`);
+        // Deduplicate themes only if not skipping themes (AI handles its own deduplication)
+        if (!skipThemes) {
+            const seenThemes = new Set();
+            result.themes = result.themes.filter(theme => {
+                const key = `${theme.day}|${theme.time || ''}|${theme.theme}|${theme.classType || ''}`;
+                if (seenThemes.has(key)) {
+                    return false; // Skip duplicate
+                }
+                seenThemes.add(key);
+                return true;
+            });
+            
+            console.log(`📊 After deduplication: ${result.themes.length} unique themes`);
+        }
         
         // Parse hosted classes - handle various formats like "- Hosted Classes -" or "- Hosted  Classes -"
         const hostedMatch = fullContent.match(/-\s*Hosted\s+Classes\s*-\s*(.*?)(?=\n\s*(?:Covers|Amped|Bandra|FIT|Best|Thanks)|$)/is);
@@ -1403,7 +1790,7 @@ class ScheduleUpdater {
             
             // Step 1: Copy complete sheet data from linked spreadsheet to target spreadsheet
             console.log('📋 Step 1: Copying complete sheet data from linked spreadsheet...');
-            const copiedValues = await this.copyScheduleDataToTargetSheet(scheduleData, sheets);
+            const copiedValues = await this.copyScheduleDataToTargetSheet(scheduleData, sheets, emailInfo);
             
             if (!copiedValues || copiedValues.length === 0) {
                 console.log('❌ No data to copy from linked spreadsheet');
@@ -1442,6 +1829,13 @@ class ScheduleUpdater {
             // Store emailInfo for use in cleaning process
             this.currentEmailInfo = emailInfo;
             
+            // Apply AI-detected changes if available
+            if (emailInfo.changes && emailInfo.changes.length > 0 && emailInfo.aiParsed) {
+                console.log(`\n🤖 Applying ${emailInfo.changes.length} AI-detected changes to schedule...`);
+                // Note: Changes will be applied during the cleanAndPopulateCleanedSheet step
+                // where we have access to the normalized schedule data
+            }
+            
             // Step 7: Populate the Covers sheet with all covers
             console.log('📋 Step 7: Populating Covers sheet...');
             // Only include email covers if this is NOT the first email
@@ -1465,7 +1859,7 @@ class ScheduleUpdater {
      * Copy schedule data from linked spreadsheet to target spreadsheet
      * This completely replaces the target sheet data with fresh data from linked sheet
      */
-    async copyScheduleDataToTargetSheet(scheduleData, sheets) {
+    async copyScheduleDataToTargetSheet(scheduleData, sheets, emailInfo) {
         console.log(`📋 Copying schedule data from linked spreadsheet...`);
         
         try {
@@ -1487,7 +1881,7 @@ class ScheduleUpdater {
             // Update date headers in row 2 to current week dates
             if (cleanedData.length >= 3) {
                 console.log('📅 Updating date headers to current week...');
-                cleanedData = this.updateSheetDateHeaders(cleanedData);
+                cleanedData = this.updateSheetDateHeaders(cleanedData, emailInfo?.subject);
             }
             
             console.log(`✅ Prepared ${cleanedData.length} rows for target sheet`);
@@ -1503,7 +1897,7 @@ class ScheduleUpdater {
     /**
      * Update date headers in sheet data to current week dates
      */
-    updateSheetDateHeaders(sheetData) {
+    updateSheetDateHeaders(sheetData, emailSubject) {
         if (!sheetData || sheetData.length < 3) {
             console.log('⚠️  Not enough rows to update date headers');
             return sheetData;
@@ -1516,13 +1910,17 @@ class ScheduleUpdater {
         console.log('📅 Original date row:', dateRow.slice(0, 10));
         console.log('📅 Day row for reference:', dayRow.slice(0, 10));
         
+        if (emailSubject) {
+            console.log('📅 Using email subject for date calculation:', emailSubject);
+        }
+        
         // Update dates for each day column
         dayRow.forEach((cell, index) => {
             if (cell && typeof cell === 'string') {
                 const dayMatch = cell.match(/(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i);
                 if (dayMatch) {
                     const dayName = dayMatch[1];
-                    const currentWeekDate = this.getDateForDay(dayName);
+                    const currentWeekDate = this.getDateForDay(dayName, emailSubject);
                     
                     // Convert format from DD-MMM-YYYY to "D MMM YYYY" (to match existing format)
                     const parts = currentWeekDate.split('-');
@@ -1906,12 +2304,19 @@ class ScheduleUpdater {
             });
 
             console.log(`✅ Processed ${allClasses.length} valid classes`);
+            
+            // Apply AI-detected changes if available
+            let finalClasses = allClasses;
+            if (this.currentEmailInfo && this.currentEmailInfo.changes && this.currentEmailInfo.changes.length > 0) {
+                console.log(`\n🤖 Applying AI-detected changes to cleaned schedule data...`);
+                finalClasses = this.applyAIChangesToSchedule(allClasses, this.currentEmailInfo.changes);
+            }
 
             // Write cleaned data to Cleaned sheet
             const headers = ['Day', 'Time', 'Location', 'Class', 'Trainer', 'Notes', 'Date', 'Theme'];
             const values = [
                 headers, 
-                ...allClasses.map(obj => headers.map(h => obj[h] || ''))
+                ...finalClasses.map(obj => headers.map(h => obj[h] || ''))
             ];
 
             // Clear and write to Cleaned sheet
@@ -1977,29 +2382,119 @@ class ScheduleUpdater {
     /**
      * Get date string for a given day of the week (format: DD-MMM-YYYY)
      */
-    getDateForDay(dayName) {
-        const daysOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-        const today = new Date();
-        const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
-        const targetDayIndex = daysOrder.indexOf(dayName);
+    getDateForDay(dayName, emailSubject) {
+        var daysOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        var targetDayIndex = daysOrder.indexOf(dayName);
         
-        if (targetDayIndex === -1) return today.toLocaleDateString('en-GB');
+        if (targetDayIndex === -1) return new Date().toLocaleDateString('en-GB');
         
-        // Calculate days to add to get to target day
-        const mondayIndex = 1;
-        const daysToAdd = (targetDayIndex + mondayIndex - currentDay + 7) % 7;
+        // Try to extract week dates from email subject first
+        var monday;
+        if (emailSubject) {
+            var weekFromSubject = this.extractWeekFromEmailSubject(emailSubject);
+            if (weekFromSubject && weekFromSubject.weekFound) {
+                // Use the start date from email subject as Monday
+                monday = new Date(weekFromSubject.startDate);
+                console.log('📅 Using Monday from email subject: ' + monday.toDateString());
+            }
+        }
         
-        const targetDate = new Date(today);
-        targetDate.setDate(today.getDate() + daysToAdd);
+        // If no email subject dates found, calculate from current date
+        if (!monday) {
+            var today = new Date();
+            var currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+            
+            // Calculate Monday of current week (start of work week)
+            monday = new Date(today);
+            var daysFromMonday = currentDay === 0 ? -6 : (1 - currentDay);
+            monday.setDate(today.getDate() + daysFromMonday);
+            console.log('📅 Using calculated Monday: ' + monday.toDateString());
+        }
+        
+        // Calculate target day from Monday
+        var targetDate = new Date(monday);
+        targetDate.setDate(monday.getDate() + targetDayIndex); // Monday=0, Tuesday=1, ..., Sunday=6
         
         // Format as DD-MMM-YYYY
-        const day = targetDate.getDate().toString().padStart(2, '0');
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        var day = targetDate.getDate().toString();
+        if (day.length === 1) day = '0' + day;
+        var monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
             'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const month = monthNames[targetDate.getMonth()];
-        const year = targetDate.getFullYear();
+        var month = monthNames[targetDate.getMonth()];
+        var year = targetDate.getFullYear();
         
-        return `${day}-${month}-${year}`;
+        return day + '-' + month + '-' + year;
+    }
+
+    /**
+     * Extract week date range from email subject
+     * Handles formats like "9 -15th Feb'26" or "29 Nov - 5th Dec '25"
+     */
+    extractWeekFromEmailSubject(emailSubject) {
+        if (!emailSubject) return null;
+        
+        // Pattern for "9 -15th Feb'26" format
+        var sameMonthPattern = /(\d{1,2})\s*-\s*(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3})\s*'(\d{2})/;
+        var sameMonthMatch = emailSubject.match(sameMonthPattern);
+        
+        if (sameMonthMatch) {
+            var startDay = parseInt(sameMonthMatch[1]);
+            var endDay = parseInt(sameMonthMatch[2]);
+            var month = sameMonthMatch[3];
+            var year = 2000 + parseInt(sameMonthMatch[4]);
+            
+            console.log('📅 Extracted week from subject: ' + startDay + '-' + endDay + ' ' + month + ' ' + year);
+            
+            // Convert month abbreviation to number
+            var monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            var monthIndex = monthNames.indexOf(month);
+            
+            if (monthIndex === -1) return null;
+            
+            // Create start date (should be Monday)
+            var startDate = new Date(year, monthIndex, startDay);
+            
+            return {
+                startDate: startDate,
+                endDate: new Date(year, monthIndex, endDay),
+                weekFound: true
+            };
+        }
+        
+        // Pattern for "29 Nov - 5th Dec '25" format (cross-month)
+        var crossMonthPattern = /(\d{1,2})\s+([A-Za-z]{3})\s*-\s*(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3})\s*'(\d{2})/;
+        var crossMonthMatch = emailSubject.match(crossMonthPattern);
+        
+        if (crossMonthMatch) {
+            var startDay = parseInt(crossMonthMatch[1]);
+            var startMonth = crossMonthMatch[2];
+            var endDay = parseInt(crossMonthMatch[3]);
+            var endMonth = crossMonthMatch[4];
+            var year = 2000 + parseInt(crossMonthMatch[5]);
+            
+            console.log('📅 Extracted cross-month week: ' + startDay + ' ' + startMonth + ' - ' + endDay + ' ' + endMonth + ' ' + year);
+            
+            // Convert month abbreviations to numbers
+            var monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            var startMonthIndex = monthNames.indexOf(startMonth);
+            var endMonthIndex = monthNames.indexOf(endMonth);
+            
+            if (startMonthIndex === -1 || endMonthIndex === -1) return null;
+            
+            var startDate = new Date(year, startMonthIndex, startDay);
+            var endDate = new Date(year, endMonthIndex, endDay);
+            
+            return {
+                startDate: startDate,
+                endDate: endDate,
+                weekFound: true
+            };
+        }
+        
+        console.log('📅 No week date pattern found in email subject');
+        return null;
     }
 
     /**
@@ -2866,10 +3361,14 @@ class ScheduleUpdater {
                                 // Check if this is a cycle/powercycle class
                                 if (this.classNamesMatch(classCell, 'cycle') || this.classNamesMatch(classCell, 'powercycle')) {
                                     // Check location match
-                                    if (this.matchLocation(locationCell, theme.location)) {
+                                    const locationMatches = this.matchLocation(locationCell, theme.location);
+                                    console.log(`   📍 Location check: Sheet="${locationCell}" Theme="${theme.location}" Match=${locationMatches}`);
+                                    if (locationMatches) {
                                         // Check time match - handle format variations
                                         const themeTime = this.normalizeTimeFormat(theme.time);
                                         const cellTime = this.normalizeTimeFormat(timeCell);
+                                        
+                                        console.log(`   🔍 PowerCycle match attempt: Sheet="${cellTime}" Theme="${themeTime}" Location="${locationCell}" (Match: ${cellTime === themeTime})`);
                                         
                                         if (cellTime === themeTime) {
                                             row[colConfig.trainer2Col] = theme.theme;
@@ -3054,10 +3553,10 @@ class ScheduleUpdater {
         // Direct match
         if (sheetLoc.includes(coverLoc)) return true;
         
-        // Location aliases - Annex is part of Bandra location
+        // Location aliases - IMPORTANT: Annex is treated as Kemps, not Bandra!
         const aliases = {
-            'kemps': ['kwality', 'kemps corner', 'kemps'],
-            'bandra': ['supreme', 'bandra', 'annex'],
+            'kemps': ['kwality', 'kemps corner', 'kemps', 'annex'],
+            'bandra': ['supreme', 'bandra'],
             'kenkere': ['kenkere'],
             'south united': ['south', 'united'],
             'copper': ['copper', 'cloves'],
@@ -3323,11 +3822,11 @@ class ScheduleUpdater {
             if (!rawDay) return; // skip records without day
             const day = rawDay.length <= 3 ? this.expandDayName(rawDay) : (rawDay.charAt(0).toUpperCase() + rawDay.slice(1).toLowerCase());
             if (scheduleByDay[day]) {
-                // Check for theme data in various possible column names (be more permissive)
+                // Check for theme data in explicit theme-related columns only
+                // (Avoid using generic columns like Column H/G which can contain trainer names)
                 let theme = classData.Theme || classData.theme || classData['Theme Name'] || 
                            classData['theme_name'] || classData['Class Theme'] || 
-                           classData['class_theme'] || classData.Themes || classData['Theme(s)'] ||
-                           classData.H || classData['Column H'] || classData['Column G'] || '';
+                           classData['class_theme'] || classData.Themes || classData['Theme(s)'] || '';
                 
                 // If no theme found in data, apply known theme patterns
                 if (!theme || !theme.trim()) {
@@ -3338,6 +3837,21 @@ class ScheduleUpdater {
                         theme = notesThemeMatch[1].trim();
                     } else {
                         theme = this.getThemeForClass(classData);
+                    }
+                }
+
+                // Guardrail: if theme looks like trainer/class text, ignore it
+                if (theme && theme.trim()) {
+                    const themeLower = theme.trim().toLowerCase();
+                    const trainerRaw = String(classData.Trainer || classData.trainer || '').trim();
+                    const trainerFirst = this.getTrainerFirstName(trainerRaw).toLowerCase();
+                    const classRaw = String(classData.Class || classData.class || '').trim();
+                    const classLower = this.normalizeClassNameForDisplay(classRaw);
+
+                    if ((trainerRaw && themeLower === trainerRaw.toLowerCase()) ||
+                        (trainerFirst && themeLower === trainerFirst) ||
+                        (classLower && themeLower === classLower)) {
+                        theme = '';
                     }
                 }
                 
@@ -3731,6 +4245,8 @@ class ScheduleUpdater {
                 const isSoldOut = (classData.notes && classData.notes.includes('SOLD OUT')) || 
                                   (theme && theme.toLowerCase().trim() === 'sold out');
 
+
+
                 // Create time span with normalized time
                 const timeSpanHtml = `<span class="t s9" style="left:${dayLeft}px;bottom:${currentBottom}px;">${time}</span>`;
                 
@@ -3747,7 +4263,7 @@ class ScheduleUpdater {
                     badgeHtml += this.createThemeBadge(theme.trim(), this.currentLocation);
                 }
                 if (isSoldOut) {
-                    badgeHtml += ' <span class="sold-out-badge" style="background-color: #dc143c; color: white; padding: 4px 10px; border-radius: 4px; font-size: 10px; font-weight: 700; display: inline-block; margin-left: 8px; position: relative; z-index: 20;">SOLD OUT</span>';
+                    badgeHtml += ' <span class="sold-out-badge">SOLD OUT</span>';
                 }
 
                 const classLeft = dayLeft + TIME_CLASS_OFFSET;
@@ -4348,78 +4864,245 @@ class ScheduleUpdater {
 
         console.log(`\n✅ Updated ${updateCount} positioned span elements`);
         
-        // Clean up old sold-out styling from spans that no longer have matching sold-out classes
-        // NOTE: Disabled for now as it's removing newly created sold-out spans
-        // this.cleanupOldSoldOutStyling();
+        // Clean up old sold-out badges and red lines from classes that are no longer sold out
+        this.cleanupOldSoldOutElements();
         
         // Post-processing: Normalize all class/trainer content spans for consistent styling
         this.normalizeAllContentSpans();
     }
 
     /**
-     * Clean up sold-out styling from spans that no longer match sold-out classes
+     * Clean up sold-out badges and red lines from classes that are no longer sold out
      */
-    cleanupOldSoldOutStyling() {
-        console.log('🧹 Cleaning up old sold-out styling...');
-        const scheduleByDay = this.organizeScheduleByDay();
-        let cleanupCount = 0;
+    cleanupOldSoldOutElements() {
+        console.log(`🧹 Cleaning up old sold-out badges and red lines... (Current file: ${this.outputPath})`);
+        
+        // Use the same data source as the creation logic - kwalityClasses array
+        const currentSoldOutClasses = new Set();
+        
+        // Process the same data that was used for span creation
+        this.kwalityClasses.forEach(classData => {
+            const theme = classData.Theme || '';
+            const notes = classData.Notes || '';
+            const isSoldOut = (notes && notes.includes('SOLD OUT')) || 
+                             (theme && theme.toLowerCase().trim() === 'sold out');
+            
+            if (isSoldOut) {
+                const day = classData.Day;
+                const time = this.normalizeTime(classData.Time);
+                const key = `${day}-${time}`;
+                currentSoldOutClasses.add(key);
+            }
+        });
+        
+        let badgeCleanupCount = 0;
+        let lineCleanupCount = 0;
 
-        // For each span with sold-out class
-        this.$('span.sold-out').each((_, elem) => {
-            const $span = this.$(elem);
-            const text = $span.text().trim();
-            
-            // Skip if it's a sold-out badge
-            if ($span.hasClass('sold-out-badge')) return;
-            
-            // Try to extract day and time from nearby elements
-            let foundDay = null;
-            let foundTime = null;
-            
-            // Look backward for time span
-            let prev = $span[0].previousSibling;
-            while (prev) {
-                if (prev.type === 'tag' && prev.name === 'span') {
-                    const $prevSpan = this.$(prev);
-                    const prevText = $prevSpan.text().trim();
-                    if (/^\d{1,2}:\d{2}\s*(?:AM|PM)?$/i.test(prevText)) {
-                        foundTime = prevText;
-                        break;
-                    }
+        console.log(`📊 Found ${currentSoldOutClasses.size} currently sold out classes`);
+        
+        // Clean up sold-out badges from spans that no longer match sold-out classes
+        this.$('span.sold-out-badge').each((_, elem) => {
+            const $badge = this.$(elem);
+            let $parentSpan = $badge.closest('span');
+
+            // If the badge appears to be a standalone span (closest span is itself)
+            // or its parent has no positioning style, try to attach it to the
+            // nearest styled content span so positioning and cleanup heuristics work.
+            const parentStyle = $parentSpan.attr('style') || '';
+            if (!$parentSpan.attr('style') || $parentSpan.is($badge)) {
+                // Prefer the next styled sibling (likely the class span), else previous
+                const $nextStyled = $badge.nextAll('span[style]').first();
+                const $prevStyled = $badge.prevAll('span[style]').first();
+                const $target = $nextStyled.length ? $nextStyled : ($prevStyled.length ? $prevStyled : null);
+                if ($target) {
+                    console.log(`    ⚙️  Moving standalone sold-out badge into nearest styled span`);
+                    $target.append($badge);
+                    $parentSpan = $target;
                 }
-                prev = prev.previousSibling;
             }
             
-            // Try to detect day from position or context
-            const style = $span.attr('style') || '';
-            const leftMatch = style.match(/left:\s*([\d.]+)px/);
-            const left = leftMatch ? parseFloat(leftMatch[1]) : 0;
+            // Try to determine day and time from parent span position and nearby time spans
+            const day = this.extractDayFromSpanPosition($parentSpan);
+            const time = this.extractTimeFromNearbySpans($parentSpan);
             
-            // Rough day detection by left position (this is a heuristic)
-            if (left < 200) foundDay = 'Monday'; // Leftmost columns
-            else if (left < 300) foundDay = 'Tuesday';
-            else if (left < 400) foundDay = 'Wednesday';
-            else if (left < 500) foundDay = 'Thursday';
-            else foundDay = 'Friday'; // Or Saturday/Sunday depending on layout
+            if (day && time) {
+                const key = `${day}-${this.normalizeTime(time)}`;
+                if (!currentSoldOutClasses.has(key)) {
+                    console.log(`    Removing sold-out badge from: ${day} ${time}`);
+                    $badge.remove();
+                    badgeCleanupCount++;
+                }
+            } else {
+                // If we can't determine day/time, do NOT remove the badge automatically.
+                // Removing here has been observed to delete legitimate sold-out badges
+                // because position parsing can be brittle across templates. Keep the
+                // badge and log a warning so issues can be investigated manually.
+                console.log(`    ⚠️  Could not determine day/time for sold-out badge — keeping it (parent span style: ${$parentSpan.attr('style') || 'none'})`);
+            }
+        });
+        
+        // Clean up red strikethrough lines
+        // Deduplicate obvious duplicate red lines (same style attribute)
+        let lineCleanupDupCount = 0;
+        const soldOutLines = this.$('span.sold-out-line');
+        console.log(`🔍 Found ${soldOutLines.length} sold-out-line elements to check`);
+        const seenLineStyles = new Set();
+        soldOutLines.each((_, el) => {
+            const $line = this.$(el);
+            const style = $line.attr('style') || '';
+            if (seenLineStyles.has(style)) {
+                // Remove exact-duplicate visual lines
+                $line.remove();
+                lineCleanupDupCount++;
+            } else {
+                seenLineStyles.add(style);
+            }
+        });
+        if (lineCleanupDupCount > 0) {
+            console.log(`    Removed ${lineCleanupDupCount} duplicate sold-out-line elements`);
+            lineCleanupCount += lineCleanupDupCount;
+        }
+        
+        this.$('span.sold-out-line').each((_, elem) => {
+            const $line = this.$(elem);
+            console.log(`  Checking line: ${$line.attr('style')}`);
             
-            // Check if this combination exists in schedule with SOLD OUT
-            if (foundDay && foundTime && scheduleByDay[foundDay]) {
-                const normalizedTime = this.normalizeTime(foundTime);
-                const matchingClass = scheduleByDay[foundDay].find(c => 
-                    this.normalizeTime(c.time).toLowerCase() === normalizedTime.toLowerCase()
-                );
-                
-                // If no matching sold-out class found, remove the styling
-                if (!matchingClass || !matchingClass.notes || !matchingClass.notes.includes('SOLD OUT')) {
-                    $span.removeClass('sold-out');
-                    $span.find('.sold-out-badge').remove();
-                    console.log(`    Removed sold-out styling from: ${text.substring(0, 50)}`);
-                    cleanupCount++;
+            // Try to determine day and time from line position
+            const day = this.extractDayFromLinePosition($line);
+            const time = this.extractTimeFromLinePosition($line);
+            console.log(`  Extracted day: "${day}", time: "${time}"`);
+            
+            if (day && time) {
+                const key = `${day}-${this.normalizeTime(time)}`;
+                console.log(`  Checking key "${key}" in currentSoldOutClasses:`, currentSoldOutClasses.has(key));
+                if (!currentSoldOutClasses.has(key)) {
+                    console.log(`    Removing sold-out line from: ${day} ${time}`);
+                    $line.remove();
+                    lineCleanupCount++;
+                }
+            } else {
+                // If we can't determine day/time, remove the line to be safe
+                console.log(`    Removing orphaned sold-out line (couldn't determine day/time)`);
+                $line.remove();
+                lineCleanupCount++;
+            }
+        });
+        
+        console.log(`✅ Cleaned up ${badgeCleanupCount} sold-out badges and ${lineCleanupCount} red lines`);
+    }
+    
+    /**
+     * Extract day from span position using column layout
+     */
+    extractDayFromSpanPosition($span) {
+        const style = $span.attr('style') || '';
+        const leftMatch = style.match(/left:\s*(\d+\.?\d*)px/);
+        if (!leftMatch) return null;
+        
+        const left = parseFloat(leftMatch[1]);
+        
+        // Determine day based on column position (approximate values)
+        if (left < 150) return 'Monday';
+        else if (left < 250) return 'Tuesday';
+        else if (left < 350) return 'Wednesday'; 
+        else if (left < 450) return 'Thursday';
+        else if (left < 550) return 'Friday';
+        else if (left < 650) return 'Saturday';
+        else return 'Sunday';
+    }
+    
+    /**
+     * Extract day from line position using column layout
+     */
+    extractDayFromLinePosition($line) {
+        const style = $line.attr('style') || '';
+        const leftMatch = style.match(/left:\s*(\d+\.?\d*)px/);
+        if (!leftMatch) return null;
+        
+        const left = parseFloat(leftMatch[1]);
+        
+        // Use same logic as span position
+        if (left < 150) return 'Monday';
+        else if (left < 250) return 'Tuesday';
+        else if (left < 350) return 'Wednesday'; 
+        else if (left < 450) return 'Thursday';
+        else if (left < 550) return 'Friday';
+        else if (left < 650) return 'Saturday';
+        else return 'Sunday';
+    }
+    
+    /**
+     * Extract time from nearby time spans
+     */
+    extractTimeFromNearbySpans($span) {
+        // Look for time spans near this class span
+        const spanBottom = this.extractBottomFromSpan($span);
+        if (spanBottom === null) return null;
+        
+        // Find time span with similar bottom position (within 5px tolerance)
+        let bestMatch = null;
+        let bestDistance = Infinity;
+        
+        this.$('span').each((_, elem) => {
+            const $timeSpan = this.$(elem);
+            const text = $timeSpan.text().trim();
+            
+            // Check if this looks like a time
+            if (/^\d{1,2}:\d{2}\s*(?:AM|PM)?$/i.test(text)) {
+                const timeBottom = this.extractBottomFromSpan($timeSpan);
+                if (timeBottom !== null) {
+                    const distance = Math.abs(spanBottom - timeBottom);
+                    if (distance < 10 && distance < bestDistance) { // Within 10px tolerance
+                        bestMatch = text;
+                        bestDistance = distance;
+                    }
                 }
             }
         });
         
-        console.log(`✅ Cleaned up ${cleanupCount} old sold-out styles`);
+        return bestMatch;
+    }
+    
+    /**
+     * Extract time from line position by finding nearby time spans
+     */
+    extractTimeFromLinePosition($line) {
+        const lineBottom = this.extractBottomFromSpan($line);
+        if (lineBottom === null) return null;
+        
+        // Find time span with similar bottom position (the line should be slightly above the text)
+        let bestMatch = null;
+        let bestDistance = Infinity;
+        
+        this.$('span').each((_, elem) => {
+            const $timeSpan = this.$(elem);
+            const text = $timeSpan.text().trim();
+            
+            // Check if this looks like a time
+            if (/^\d{1,2}:\d{2}\s*(?:AM|PM)?$/i.test(text)) {
+                const timeBottom = this.extractBottomFromSpan($timeSpan);
+                if (timeBottom !== null) {
+                    // Line should be about 8px above the text (based on creation logic)
+                    const expectedLineBottom = timeBottom + 8;
+                    const distance = Math.abs(lineBottom - expectedLineBottom);
+                    if (distance < 15 && distance < bestDistance) { // Allow some tolerance
+                        bestMatch = text;
+                        bestDistance = distance;
+                    }
+                }
+            }
+        });
+        
+        return bestMatch;
+    }
+    
+    /**
+     * Extract bottom position from span style attribute
+     */
+    extractBottomFromSpan($span) {
+        const style = $span.attr('style') || '';
+        const bottomMatch = style.match(/bottom:\s*(\d+\.?\d*)px/);
+        return bottomMatch ? parseFloat(bottomMatch[1]) : null;
     }
 
     /**
@@ -4732,6 +5415,11 @@ class ScheduleUpdater {
             let htmlContent = fs.readFileSync(this.outputPath, 'utf-8');
             console.log(`  HTML content size: ${htmlContent.length} bytes`);
             
+            // Debug: Check if sold-out elements are in the HTML
+            const soldOutBadges = (htmlContent.match(/sold-out-badge/g) || []).length;
+            const soldOutLines = (htmlContent.match(/sold-out-line/g) || []).length;
+            console.log(`  Found ${soldOutBadges} sold-out badges and ${soldOutLines} sold-out lines in HTML`);
+            
             // Convert background image to data URL for better PDF compatibility
             const imagePath = path.join(__dirname, `${this.locationName}.png`);
             if (fs.existsSync(imagePath)) {
@@ -4781,6 +5469,25 @@ class ScheduleUpdater {
                         -webkit-print-color-adjust: exact !important;
                         print-color-adjust: exact !important;
                         color-adjust: exact !important;
+                    }
+                    
+                    /* Ensure sold-out badges and lines render properly */
+                    .sold-out-badge {
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                        color-adjust: exact !important;
+                        background: #dc2626 !important;
+                        color: white !important;
+                        display: inline-block !important;
+                        font-weight: 800 !important;
+                    }
+                    
+                    .sold-out-line {
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                        color-adjust: exact !important;
+                        background-color: #dc2626 !important;
+                        display: block !important;
                     }
                     
                     /* Remove any potential overlays or popups */
@@ -5038,6 +5745,16 @@ class ScheduleUpdater {
             this.updateDateHeaders();
             this.save();
             console.log('✅ Schedule HTML updated from Google Sheets Cleaned data!');
+            
+            // Clean up old sold-out elements now that HTML is saved
+            this.cleanupOldSoldOutElements();
+            
+            // Save again after cleanup to persist the cleanup changes
+            this.save();
+            console.log('✅ Sold-out element cleanup completed and saved!');
+            
+            // Add small delay to ensure HTML file is fully written to disk
+            await new Promise(resolve => setTimeout(resolve, 1000));
             
             // Step 2: Generate PDF
             const pdfPath = await this.generatePDF();

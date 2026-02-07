@@ -316,10 +316,16 @@ class EnhancedScheduleMapper {
             const content = message.content || message.body || '';
             
             console.log(`📧 Scanning message ${i + 1}/${messages.length} for PowerCycle themes...`);
+            console.log(`📄 Message ${i + 1} content preview: ${content.substring(0, 500).replace(/\n/g, ' ')}...`);
             
-            // Look for Power Cycle theme sections in this message
-            const powerCycleRegex = /POWER\s*CYCLE\s*THEMES?\s*:?\s*(.*?)(?=\n\s*(?:Thanks|Best|Regards|On\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)|\n--|Covers|FIT|AMPED|\n\s*$))/is;
+            // Look for Power Cycle theme sections in this message - more flexible pattern
+            const powerCycleRegex = /(?:POWER\s*CYCLE\s*THEMES?|Power\s*Cycle\s*themes?)\s*:?\s*(.*?)(?=\n\s*(?:Thanks|Best|Regards|On\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)|\n--|Covers|FIT|AMPED|Bandra\s*cycle\s*themes|\n\s*$))/is;
             const match = content.match(powerCycleRegex);
+            
+            console.log(`🔍 PowerCycle regex match result for message ${i + 1}: ${match ? 'FOUND' : 'NOT FOUND'}`);
+            if (match) {
+                console.log(`🎯 Matched content: "${match[0].substring(0, 200)}..."`);
+            }
             
             if (match) {
                 foundPowerCycleSection = true;
