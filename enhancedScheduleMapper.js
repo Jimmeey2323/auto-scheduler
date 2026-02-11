@@ -58,7 +58,7 @@ class EnhancedScheduleMapper {
             'bandra': [
                 { day: 'Monday', time: '8:45', theme: 'Lady Gaga vs Bruno Mars' },
                 { day: 'Tuesday', time: '7:15', theme: 'Rihanna + Friends' },
-                { day: 'Wednesday', time: '10:30', theme: 'Rihanna + Friends' },
+                { day: 'Wednesday', time: '6:30', theme: 'Lady Gaga vs Bruno Mars' },  // Fixed: was 10:30, actual time is 6:30 PM
                 { day: 'Thursday', time: '8:00', theme: 'Lady Gaga vs Bruno Mars' },
                 { day: 'Friday', time: '7:15', theme: 'Lady Gaga vs Bruno Mars' },
                 { day: 'Saturday', time: '11:30', theme: 'Rihanna + Friends' }
@@ -89,6 +89,22 @@ class EnhancedScheduleMapper {
                 { day: 'Sunday', time: '10:00', theme: 'Rihanna + Friends' },      // Annex
                 { day: 'Sunday', time: '11:30', theme: 'Lady Gaga vs Bruno Mars' }, // Annex
                 { day: 'Sunday', time: '5:00', theme: 'Rihanna + Friends' }        // Annex
+            ]
+        };
+
+        // Back Body Blaze theme templates
+        this.backBodyBlazeTemplates = {
+            'bandra': [
+                { day: 'Wednesday', time: '8:45', theme: 'Summer Vibes' },
+                { day: 'Wednesday', time: '7:30', theme: 'Summer Vibes' }
+            ],
+            'kemps': [
+                { day: 'Monday', time: '6:00', theme: 'Summer Vibes' },
+                { day: 'Tuesday', time: '6:15', theme: 'Summer Vibes' },
+                { day: 'Wednesday', time: '8:00', theme: 'Summer Vibes' },
+                { day: 'Thursday', time: '6:30', theme: 'Summer Vibes' },
+                { day: 'Friday', time: '6:00', theme: 'Summer Vibes' },
+                { day: 'Saturday', time: '9:00', theme: 'Summer Vibes' }
             ]
         };
     }
