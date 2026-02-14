@@ -107,12 +107,20 @@ class ScheduleUpdater {
         console.log(`📧 Processing ${emailMessages.length} message(s)`);
 
         try {
+            // CRITICAL: For themes, ONLY use the MOST RECENT message to avoid picking up old themes
+            // The most recent message is the last one in the array
+            const mostRecentMessage = emailMessages[emailMessages.length - 1];
+
+            console.log('📧 Most recent message preview:', mostRecentMessage.substring(0, 300).replace(/\n/g, ' ') + '...');
+
+            // For covers and changes, we can look at the full thread context
             const fullThread = emailMessages.join('\n\n---MESSAGE SEPARATOR---\n\n');
-            
+
             // Parse different types of information in parallel
+            // IMPORTANT: Use mostRecentMessage for themes to avoid extracting old data
             const [covers, themes, changes] = await Promise.all([
                 isFirstEmail ? Promise.resolve([]) : this.aiParseCovers(fullThread),
-                this.aiParseThemes(fullThread),
+                this.aiParseThemes(mostRecentMessage), // ← ONLY most recent message for themes
                 this.aiParseChanges(fullThread)
             ]);
 
@@ -191,41 +199,122 @@ Return ONLY valid JSON, no other text.`;
      * AI: Extract theme information
      */
     async aiParseThemes(emailContent) {
-        const prompt = `Extract ALL fitness class themes from this email thread including PowerCycle, Amped Up, FIT, and Bandra cycle themes.
+        const prompt = `You are an expert at extracting fitness class themes from schedule emails. Your task is to accurately parse theme information.
 
-Look for patterns like:
-- "Power Cycle themes:" followed by location sections (Bandra, Kemps)
-- "Amped Up theme:" with day-theme pairs
-- "FIT Theme:" with weekly themes
-- "Bandra cycle themes:" with day-theme pairs
+========================================
+SECTION IDENTIFICATION (CRITICAL)
+========================================
+1. ONLY extract from these sections:
+   - "Power Cycle themes:" or "PowerCycle themes:"
+   - "Amped Up theme:" or "Amped Up Theme:"
+   - "FIT Theme:" or "FIT theme:"
+   - "Bandra cycle themes:"
 
-Return a JSON object with this structure:
+2. NEVER extract from:
+   - "COVERS" or "Covers" section (contains trainer substitutions, NOT themes)
+   - Email signatures, quoted text, previous messages
+   - Content after "Best,", "Thanks,", "Regards,"
+
+3. Special cases:
+   - If themes section says "Will be sending this shortly" → skip that theme type
+   - If "Morning cycles - [Name]" appears in COVERS → it's a trainer name, NOT a theme
+
+========================================
+POWER CYCLE THEMES PARSING
+========================================
+Format structure:
+```
+Power Cycle themes:
+Bandra
+Mon 6 pm - Love Pop
+Tue 8 am - Love Pop
+Tue 7:15 pm - Teen Crush
+Wed 6:30 pm - Teen Crush
+4.30 pm - Love Pop
+
+Kemps
+Tue 7 pm - Teen Crush
+Wed 8 am - Teen Crush
+Sat 11:30 am - Teen Crush
+```
+
+Parsing rules:
+- Location headers (Bandra, Kemps, Annex, etc.) indicate the studio
+- Lines under location: [Day] [Time] - [Theme Name]
+- Day names: Mon, Tue, Wed, Thu, Fri, Sat, Sun (or full names)
+- Times: Various formats (6 pm, 7:15 pm, 8 am, 4.30 pm, etc.)
+- Theme name comes after the dash (-)
+- If line has no day (e.g., "4.30 pm - Love Pop"), use the previous day or mark as standalone
+
+For each theme, return:
+{
+  "day": "Monday",
+  "time": "6:00 PM",
+  "location": "Bandra",
+  "classType": "PowerCycle",
+  "theme": "Love Pop"
+}
+
+SPECIAL PATTERN - Morning/Evening Cycles:
+If you see in Power Cycle themes section:
+```
+Kemps
+Morning Cycles - Teen Crush
+```
+This means ALL morning PowerCycle classes at Kemps get "Teen Crush" theme.
+Return:
+{
+  "day": "All",
+  "time": "morning",
+  "location": "Kemps",
+  "classType": "PowerCycle",
+  "theme": "Teen Crush",
+  "isPattern": true,
+  "timePattern": "morning"
+}
+
+========================================
+AMPED UP THEMES PARSING
+========================================
+Format: "Tuesday: Heart Rate & Heartbreak" or "Tuesday - No Ifs,Just Butts"
+Return:
+{
+  "day": "Tuesday",
+  "time": "",
+  "location": "Kemps",
+  "classType": "Amped Up",
+  "theme": "Heart Rate & Heartbreak"
+}
+
+========================================
+FIT THEMES PARSING
+========================================
+Format: "All classes, all week - SUPER SETS"
+Return:
+{
+  "day": "All",
+  "time": "",
+  "location": "All",
+  "classType": "FIT",
+  "theme": "SUPER SETS"
+}
+
+========================================
+OUTPUT FORMAT
+========================================
+Return JSON only:
 {
   "themes": [
-    {
-      "day": "Monday",
-      "time": "8:00 AM",
-      "location": "Kemps",
-      "classType": "PowerCycle",
-      "theme": "Lady Gaga vs Bruno Mars"
-    },
-    {
-      "day": "Tuesday",
-      "time": "",
-      "location": "Kemps",
-      "classType": "Amped Up",
-      "theme": "Heart Rate & Heartbreak"
-    }
+    {theme objects here}
   ]
 }
 
-If no themes found, return: {"themes": []}
+If no themes found: {"themes": []}
 
-Common theme names: Lady Gaga vs Bruno Mars, Rihanna + Friends, Teen Crush, Love Pop, Heart Rate & Heartbreak, Taylor Swift, Super Sets, Tabata
-Known class types: PowerCycle, Amped Up, CYCLE, FIT
-Known locations: Kemps, Bandra, Annex, Kwality House, Supreme HQ
+Common theme names: Love Pop, Teen Crush, Lady Gaga vs Bruno Mars, Rihanna + Friends, Taylor Swift, Heart Rate & Heartbreak, Super Sets, Tabata, No Ifs Just Butts
 
-Email thread:
+========================================
+Email content to parse:
 ${emailContent.substring(0, 12000)}
 
 Return ONLY valid JSON, no other text.`;
@@ -234,7 +323,7 @@ Return ONLY valid JSON, no other text.`;
             const response = await this.openai.chat.completions.create({
                 model: this.aiModel,
                 messages: [
-                    { role: 'system', content: 'You are a precise schedule data extractor. Always return valid JSON.' },
+                    { role: 'system', content: 'You are an expert fitness schedule data parser. You extract theme information with 100% accuracy by carefully reading section headers and ignoring irrelevant content like covers and signatures. Always return valid JSON.' },
                     { role: 'user', content: prompt }
                 ],
                 temperature: 0.1,
@@ -3333,6 +3422,67 @@ Return ONLY valid JSON, no other text.`;
                                     themesApplied++;
                                 } else {
                                     console.log(`❌ Time mismatch: "${cellTime}" ≠ "${themeTime}" for ${theme.theme}`);
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (theme.isPattern && theme.timePattern && (theme.classType === 'PowerCycle' || theme.classType === 'CYCLE')) {
+                // Handle pattern-based themes like "Morning Cycles" or "Evening Cycles"
+                console.log(`🔍 Looking for ${theme.timePattern} ${theme.classType} classes at ${theme.location} with theme: ${theme.theme}`);
+
+                // CRITICAL: Pattern-based themes MUST have a specific location
+                if (!theme.location || theme.location === 'All') {
+                    console.log(`⚠️  Pattern theme "${theme.theme}" missing specific location - skipping to avoid applying to wrong locations`);
+                    continue;
+                }
+
+                // Apply theme to ALL morning or evening power cycle classes at the specified location ONLY
+                for (const [dayName, dayColumns] of Object.entries(structure.dayColumns)) {
+                    if (!dayColumns) continue;
+
+                    for (const colConfig of dayColumns) {
+                        for (let rowIndex = structure.headerRows; rowIndex < updatedValues.length; rowIndex++) {
+                            const row = updatedValues[rowIndex];
+                            if (!row || row.length <= colConfig.trainer2Col) continue;
+
+                            const timeCell = String(row[0] || '').trim();
+                            const classCell = String(row[colConfig.classCol] || '').trim();
+                            const locationCell = String(row[colConfig.locationCol] || '').toLowerCase().trim();
+
+                            // Check if this is a cycle/powercycle class
+                            const isCycleClass = this.classNamesMatch(classCell, 'cycle') || this.classNamesMatch(classCell, 'powercycle');
+
+                            if (isCycleClass && timeCell) {
+                                // STRICT location match required - no fallbacks
+                                const locationMatches = this.matchLocation(locationCell, theme.location);
+
+                                if (locationMatches) {
+                                    // Check time pattern match
+                                    const isPM = timeCell.toLowerCase().includes('pm');
+                                    const isAM = timeCell.toLowerCase().includes('am');
+
+                                    let shouldApplyTheme = false;
+                                    if (theme.timePattern === 'morning' && isAM) {
+                                        shouldApplyTheme = true;
+                                    } else if (theme.timePattern === 'evening' && isPM) {
+                                        shouldApplyTheme = true;
+                                    }
+
+                                    if (shouldApplyTheme) {
+                                        row[colConfig.trainer2Col] = theme.theme;
+                                        console.log(`✅ Applied ${theme.timePattern} PowerCycle theme: ${theme.theme} to ${dayName} row ${rowIndex + 1}, col ${colConfig.trainer2Col + 1} (Class: "${classCell}", Time: "${timeCell}", Location: "${locationCell}")`);
+
+                                        // Also update in-memory class data
+                                        this.updateInMemoryClassTheme(dayName, timeCell, classCell, theme.theme);
+
+                                        themesApplied++;
+                                    }
+                                } else {
+                                    // Log when location doesn't match to help debug
+                                    if (isCycleClass && (theme.timePattern === 'morning' && timeCell.toLowerCase().includes('am') || theme.timePattern === 'evening' && timeCell.toLowerCase().includes('pm'))) {
+                                        console.log(`⏭️  Skipping ${dayName} ${timeCell} at "${locationCell}" - doesn't match theme location "${theme.location}"`);
+                                    }
                                 }
                             }
                         }
