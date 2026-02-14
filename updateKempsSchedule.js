@@ -223,7 +223,6 @@ SECTION IDENTIFICATION (CRITICAL)
 POWER CYCLE THEMES PARSING
 ========================================
 Format structure:
-```
 Power Cycle themes:
 Bandra
 Mon 6 pm - Love Pop
@@ -236,7 +235,6 @@ Kemps
 Tue 7 pm - Teen Crush
 Wed 8 am - Teen Crush
 Sat 11:30 am - Teen Crush
-```
 
 Parsing rules:
 - Location headers (Bandra, Kemps, Annex, etc.) indicate the studio
@@ -257,10 +255,8 @@ For each theme, return:
 
 SPECIAL PATTERN - Morning/Evening Cycles:
 If you see in Power Cycle themes section:
-```
 Kemps
 Morning Cycles - Teen Crush
-```
 This means ALL morning PowerCycle classes at Kemps get "Teen Crush" theme.
 Return:
 {
