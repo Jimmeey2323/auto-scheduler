@@ -116,24 +116,22 @@ class ScheduleUpdater {
             // For covers and changes, we can look at the full thread context
             const fullThread = emailMessages.join('\n\n---MESSAGE SEPARATOR---\n\n');
 
-            // Parse different types of information in parallel
-            // IMPORTANT: Use mostRecentMessage for themes to avoid extracting old data
-            const [covers, themes, changes] = await Promise.all([
+            // Parse covers and changes only (themes now come from CSV)
+            const [covers, changes] = await Promise.all([
                 isFirstEmail ? Promise.resolve([]) : this.aiParseCovers(fullThread),
-                this.aiParseThemes(mostRecentMessage), // ← ONLY most recent message for themes
                 this.aiParseChanges(fullThread)
             ]);
 
             const result = {
                 covers: covers || [],
-                themes: themes || [],
+                themes: [], // Empty - themes now come from CSV
                 changes: changes || [],
                 aiParsed: true
             };
 
             console.log(`✅ AI Parsing Complete:`);
             console.log(`   📝 Covers: ${result.covers.length}`);
-            console.log(`   🎨 Themes: ${result.themes.length}`);
+            console.log(`   🎨 Themes: 0 (extracted from CSV)`);
             console.log(`   🔄 Changes: ${result.changes.length}`);
 
             return result;
@@ -197,6 +195,7 @@ Return ONLY valid JSON, no other text.`;
 
     /**
      * AI: Extract theme information
+     * NOTE: This function is no longer used in the main flow - themes are extracted from CSV
      */
     async aiParseThemes(emailContent) {
         const prompt = `You are an expert at extracting fitness class themes from schedule emails. Your task is to accurately parse theme information.
@@ -1141,28 +1140,32 @@ Return ONLY valid JSON, no other text.`;
     }
 
     /**
-     * Parse email content for covers and themes information
+     * Parse email content for covers and hosted classes information
      * @param {Array} allMessages - Array of email message bodies
-     * @param {Boolean} isFirstEmail - If true, only extract themes (covers come from spreadsheet)
+     * @param {Boolean} isFirstEmail - If true, only extract covers (themes now come from CSV)
      */
     async parseEmailForScheduleInfo(allMessages, isFirstEmail = true) {
         console.log('🔍 Parsing email content for schedule information...');
+        console.log('🎨 Note: Themes are now extracted from CSV, not email');
         
-        // Use AI parsing exclusively for theme detection if enabled
+        // Always skip theme extraction since themes come from CSV now
+        const skipThemes = true;
+        
+        // Use AI parsing if enabled, but only for covers and changes
         if (this.aiEnabled) {
             try {
                 const aiResult = await this.parseEmailWithAI(allMessages, isFirstEmail);
                 
                 if (aiResult && aiResult.aiParsed) {
-                    console.log('✅ Using AI-parsed results EXCLUSIVELY for themes');
-                    console.log(`🎨 AI extracted ${aiResult.themes.length} themes`);
+                    console.log('✅ Using AI-parsed results for covers and changes only');
+                    console.log(`📝 AI extracted ${aiResult.covers.length} covers`);
                     
-                    // Only get covers and hosted classes from regex if needed
-                    const regexResult = await this.parseEmailForScheduleInfoRegex(allMessages, isFirstEmail, true); // Skip themes
+                    // Get hosted classes from regex
+                    const regexResult = await this.parseEmailForScheduleInfoRegex(allMessages, isFirstEmail, skipThemes);
                     
                     return {
                         covers: aiResult.covers.length > 0 ? aiResult.covers : regexResult.covers,
-                        themes: aiResult.themes, // AI themes ONLY - no regex themes
+                        themes: [], // Empty - themes come from CSV
                         changes: aiResult.changes,
                         hostedClasses: regexResult.hostedClasses,
                         aiParsed: true
@@ -1173,8 +1176,8 @@ Return ONLY valid JSON, no other text.`;
             }
         }
 
-        // Fallback to regex-based parsing
-        return this.parseEmailForScheduleInfoRegex(allMessages, isFirstEmail);
+        // Fallback to regex-based parsing (with themes skipped)
+        return this.parseEmailForScheduleInfoRegex(allMessages, isFirstEmail, skipThemes);
     }
 
     /**
@@ -1186,7 +1189,9 @@ Return ONLY valid JSON, no other text.`;
         console.log('🔍 Parsing email content for schedule information...');
         console.log(`📧 Total messages in thread: ${(allMessages || []).length}`);
         if (skipThemes) {
-            console.log('🎨 Skipping theme extraction - AI handling themes exclusively');
+            console.log('🎨 Skipping theme extraction - themes now come from CSV');
+        } else {
+            console.log('⚠️  Theme extraction enabled - should normally be skipped in favor of CSV');
         }
         
         const result = {
@@ -2184,13 +2189,15 @@ Return ONLY valid JSON, no other text.`;
             console.log('📋 Processing schedule data for cleaning...');
             console.log(`🔢 Found ${dataRows.length} data rows to process`);
             
-            // Define column mappings based on your Google Apps Script
-            const locationCols = [1, 7, 13, 18, 23, 28, 33];
+            // Define column mappings based on new CSV format:
+            // Time, Location, Class, Trainer 1, Trainer 2, Cover, Theme (repeated for each day)
+            const locationCols = [1, 7, 13, 19, 25, 31, 37];
             const dayCols = locationCols;
-            const classCols = [2, 8, 14, 19, 24, 29, 34];
-            const trainer1Cols = [3, 9, 15, 20, 25, 30, 35];
-            const trainer2Cols = [4, 10, 16, 21, 26, 31, 36]; // For themes
-            const coverCols = [6, 12, 17, 22, 27, 32, 37];
+            const classCols = [2, 8, 14, 20, 26, 32, 38];
+            const trainer1Cols = [3, 9, 15, 21, 27, 33, 39];
+            const trainer2Cols = [4, 10, 16, 22, 28, 34, 40];
+            const coverCols = [5, 11, 17, 23, 29, 35, 41];
+            const themeCols = [6, 12, 18, 24, 30, 36, 42]; // NEW: Dedicated theme columns
 
             // Find time column
             const timeColIndex = headerRow.findIndex(h => 
@@ -2228,7 +2235,7 @@ Return ONLY valid JSON, no other text.`;
 
                     const trainerRaw = row[trainer1Cols[setIdx]];
                     const coverRaw = row[coverCols[setIdx]];
-                    const themeRaw = row[trainer2Cols[setIdx]]; // Theme from Trainer 2 column
+                    const themeRaw = row[themeCols[setIdx]]; // Theme from dedicated Theme column
                     
                     // Parse time first so it's available for logging
                     const timeRaw = row[timeColIndex];
