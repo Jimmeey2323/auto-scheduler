@@ -1816,8 +1816,8 @@ Return ONLY valid JSON, no other text.`;
             const sheetStructure = this.analyzeSheetStructure(currentValues);
             console.log('📋 Sheet structure:', JSON.stringify(sheetStructure, null, 2));
             
-            // Step 5: Apply covers and themes to the freshly copied data
-            console.log('🎨 Step 5: Applying email themes and covers to copied data...');
+            // Step 5: Apply additional covers from email (themes stay from sheet Theme columns)
+            console.log('🎨 Step 5: Applying email covers to copied data (themes retained from sheet columns)...');
             const finalValues = this.applyEmailDataToSheet(currentValues, emailInfo, sheetStructure);
             
             // Step 6: Update the sheet with the final modified data
@@ -1847,7 +1847,7 @@ Return ONLY valid JSON, no other text.`;
             console.log('🧹 Step 8: Cleaning data and populating Cleaned sheet...');
             await this.cleanAndPopulateCleanedSheet(sheets);
             
-            console.log(`✅ Target spreadsheet updated with fresh data and email themes/covers applied`);
+            console.log(`✅ Target spreadsheet updated with fresh data, email covers applied, and sheet themes retained`);
             
         } catch (error) {
             console.error('❌ Error updating target spreadsheet:', error);
@@ -1904,11 +1904,13 @@ Return ONLY valid JSON, no other text.`;
         }
         
         const updatedData = [...sheetData];
-        const dayRow = updatedData[2] || []; // Row 3 has days
-        const dateRow = updatedData[1] || []; // Row 2 has dates (this is what we want to update)
+        const scheduleLayout = this.detectScheduleHeaderRows(updatedData);
+        const dayRow = updatedData[scheduleLayout.dayRowIndex] || [];
+        const dateRow = updatedData[scheduleLayout.dateRowIndex] || [];
         
         console.log('📅 Original date row:', dateRow.slice(0, 10));
         console.log('📅 Day row for reference:', dayRow.slice(0, 10));
+        console.log(`📐 Date/day rows detected at: ${scheduleLayout.dateRowIndex + 1}/${scheduleLayout.dayRowIndex + 1}`);
         
         if (emailSubject) {
             console.log('📅 Using email subject for date calculation:', emailSubject);
@@ -1929,14 +1931,17 @@ Return ONLY valid JSON, no other text.`;
                     const year = parts[2];
                     const formattedDate = `${day} ${month} ${year}`;
                     
-                    updatedData[1][index] = formattedDate;
+                    if (!updatedData[scheduleLayout.dateRowIndex]) {
+                        updatedData[scheduleLayout.dateRowIndex] = [];
+                    }
+                    updatedData[scheduleLayout.dateRowIndex][index] = formattedDate;
                     
                     console.log(`📅 Updated ${dayName} date: ${dateRow[index]} → ${formattedDate}`);
                 }
             }
         });
         
-        console.log('✅ Updated date row:', updatedData[1].slice(0, 10));
+        console.log('✅ Updated date row:', (updatedData[scheduleLayout.dateRowIndex] || []).slice(0, 10));
         
         return updatedData;
     }
@@ -2071,6 +2076,181 @@ Return ONLY valid JSON, no other text.`;
     }
 
     /**
+     * Normalize header label for structure matching
+     */
+    normalizeHeaderLabel(value) {
+        return (value || '')
+            .toString()
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, ' ');
+    }
+
+    /**
+     * Extract canonical day name from a cell value
+     */
+    extractDayNameFromCell(value) {
+        const text = (value || '').toString().trim();
+        if (!text) return '';
+        const match = text.match(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i);
+        if (!match) return '';
+        const day = match[1].toLowerCase();
+        return day.charAt(0).toUpperCase() + day.slice(1);
+    }
+
+    /**
+     * Find time column index from header row
+     */
+    getTimeColumnIndexFromHeader(headerRow) {
+        for (let i = 0; i < (headerRow || []).length; i++) {
+            if (this.normalizeHeaderLabel(headerRow[i]) === 'time') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Detect where date/day/header rows are in the schedule sheet
+     * Supports both:
+     * - [blank, dates, days, headers, data...]
+     * - [dates, days, headers, data...]
+     */
+    detectScheduleHeaderRows(rows) {
+        const fallback = {
+            dateRowIndex: 1,
+            dayRowIndex: 2,
+            headerRowIndex: 3,
+            dataStartRowIndex: 4
+        };
+
+        if (!rows || rows.length === 0) return fallback;
+
+        let headerRowIndex = -1;
+        let bestScore = -1;
+        const scanLimit = Math.min(rows.length, 8);
+
+        for (let i = 0; i < scanLimit; i++) {
+            const labels = (rows[i] || []).map(cell => this.normalizeHeaderLabel(cell));
+            const hasTime = labels.includes('time');
+            if (!hasTime) continue;
+
+            let score = 0;
+            if (labels.includes('location')) score += 2;
+            if (labels.includes('class')) score += 2;
+            if (labels.includes('trainer 1') || labels.includes('trainer1')) score += 2;
+            if (labels.includes('cover')) score += 1;
+            if (labels.includes('theme')) score += 1;
+
+            if (score > bestScore) {
+                bestScore = score;
+                headerRowIndex = i;
+            }
+        }
+
+        if (headerRowIndex === -1) {
+            return fallback;
+        }
+
+        const dayRowIndex = Math.max(0, headerRowIndex - 1);
+        const dateRowIndex = Math.max(0, headerRowIndex - 2);
+
+        return {
+            dateRowIndex,
+            dayRowIndex,
+            headerRowIndex,
+            dataStartRowIndex: headerRowIndex + 1
+        };
+    }
+
+    /**
+     * Detect day block column mappings dynamically from day/header rows
+     */
+    buildDayColumnMappings(rows) {
+        const mappings = {};
+        const daysOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        daysOrder.forEach(day => {
+            mappings[day] = [];
+        });
+
+        if (!rows || rows.length < 4) {
+            return mappings;
+        }
+
+        const scheduleLayout = this.detectScheduleHeaderRows(rows);
+        const dayRow = rows[scheduleLayout.dayRowIndex] || [];
+        const headerRow = rows[scheduleLayout.headerRowIndex] || [];
+        const maxCols = Math.max(dayRow.length, headerRow.length);
+
+        const dayStarts = [];
+        for (let col = 0; col < maxCols; col++) {
+            const dayName = this.extractDayNameFromCell(dayRow[col]);
+            if (!dayName) continue;
+
+            const prevDay = col > 0 ? this.extractDayNameFromCell(dayRow[col - 1]) : '';
+            if (col === 0 || prevDay !== dayName) {
+                dayStarts.push({ day: dayName, startCol: col });
+            }
+        }
+
+        // Fallback when day row is missing labels: infer from repeating "Location" blocks
+        if (dayStarts.length === 0) {
+            let dayIdx = 0;
+            for (let col = 0; col < maxCols && dayIdx < daysOrder.length; col++) {
+                if (this.normalizeHeaderLabel(headerRow[col]) === 'location') {
+                    dayStarts.push({ day: daysOrder[dayIdx], startCol: col });
+                    dayIdx++;
+                }
+            }
+        }
+
+        for (let idx = 0; idx < dayStarts.length; idx++) {
+            const current = dayStarts[idx];
+            const next = dayStarts[idx + 1];
+            const endCol = next ? next.startCol - 1 : maxCols - 1;
+
+            const config = {
+                dayCol: current.startCol,
+                startCol: current.startCol,
+                endCol,
+                locationCol: -1,
+                classCol: -1,
+                trainer1Col: -1,
+                trainer2Col: -1,
+                coverCol: -1,
+                themeCol: -1
+            };
+
+            for (let col = current.startCol; col <= endCol; col++) {
+                const header = this.normalizeHeaderLabel(headerRow[col]);
+                if (header === 'location' && config.locationCol === -1) config.locationCol = col;
+                if (header === 'class' && config.classCol === -1) config.classCol = col;
+                if ((header === 'trainer 1' || header === 'trainer1') && config.trainer1Col === -1) config.trainer1Col = col;
+                if ((header === 'trainer 2' || header === 'trainer2') && config.trainer2Col === -1) config.trainer2Col = col;
+                if (header === 'cover' && config.coverCol === -1) config.coverCol = col;
+                if (header === 'theme' && config.themeCol === -1) config.themeCol = col;
+            }
+
+            // Relative fallback based on common block order
+            if (config.locationCol === -1 && current.startCol <= endCol) config.locationCol = current.startCol;
+            if (config.classCol === -1 && current.startCol + 1 <= endCol) config.classCol = current.startCol + 1;
+            if (config.trainer1Col === -1 && current.startCol + 2 <= endCol) config.trainer1Col = current.startCol + 2;
+            if (config.trainer2Col === -1 && current.startCol + 3 <= endCol) config.trainer2Col = current.startCol + 3;
+            if (config.coverCol === -1 && current.startCol + 4 <= endCol) config.coverCol = current.startCol + 4;
+            if (config.themeCol === -1 && current.startCol + 5 <= endCol &&
+                this.normalizeHeaderLabel(headerRow[current.startCol + 5]) === 'theme') {
+                config.themeCol = current.startCol + 5;
+            }
+
+            if (config.locationCol >= 0 && config.classCol >= 0 && config.trainer1Col >= 0 && mappings[current.day]) {
+                mappings[current.day].push(config);
+            }
+        }
+
+        return mappings;
+    }
+
+    /**
      * Clean and normalize schedule data and populate the Cleaned sheet
      */
     async cleanAndPopulateCleanedSheet(sheets) {
@@ -2091,129 +2271,129 @@ Return ONLY valid JSON, no other text.`;
                 return;
             }
 
-            const dayRow = rows[2] || [];    // Row 3 has days
-            const headerRow = rows[3] || []; // Row 4 has headers
-            const dateRow = rows[1] || [];   // Row 2 has dates
-            const dataRows = rows.slice(4);
+            const scheduleLayout = this.detectScheduleHeaderRows(rows);
+            const headerRow = rows[scheduleLayout.headerRowIndex] || [];
+            const dateRow = rows[scheduleLayout.dateRowIndex] || [];
+            const dataRows = rows.slice(scheduleLayout.dataStartRowIndex);
             
             console.log('📋 Processing schedule data for cleaning...');
             console.log(`🔢 Found ${dataRows.length} data rows to process`);
+            console.log(`📐 Detected layout: date row=${scheduleLayout.dateRowIndex + 1}, day row=${scheduleLayout.dayRowIndex + 1}, header row=${scheduleLayout.headerRowIndex + 1}, data starts row=${scheduleLayout.dataStartRowIndex + 1}`);
             
-            // Define column mappings based on your Google Apps Script
-            const locationCols = [1, 7, 13, 18, 23, 28, 33];
-            const dayCols = locationCols;
-            const classCols = [2, 8, 14, 19, 24, 29, 34];
-            const trainer1Cols = [3, 9, 15, 20, 25, 30, 35];
-            const trainer2Cols = [4, 10, 16, 21, 26, 31, 36]; // For themes
-            const coverCols = [6, 12, 17, 22, 27, 32, 37];
+            // Dynamically detect all day blocks and column positions from sheet headers
+            const dayColumnMappings = this.buildDayColumnMappings(rows);
+            const daysOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
             // Find time column
-            const timeColIndex = headerRow.findIndex(h => 
-                (h || '').toString().trim().toLowerCase() === 'time'
-            );
+            const timeColIndex = this.getTimeColumnIndexFromHeader(headerRow);
             
             if (timeColIndex === -1) {
                 console.log('❌ Time column header not found in row 4');
                 return;
             }
 
-            const daysOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            console.log('📋 Day column mapping for cleaning:');
+            for (const dayName of daysOrder) {
+                const configs = dayColumnMappings[dayName] || [];
+                if (configs.length === 0) continue;
+                for (const cfg of configs) {
+                    console.log(
+                        `   ${dayName}: day=${cfg.dayCol}, location=${cfg.locationCol}, class=${cfg.classCol}, trainer1=${cfg.trainer1Col}, trainer2=${cfg.trainer2Col}, cover=${cfg.coverCol}, theme=${cfg.themeCol}`
+                    );
+                }
+            }
+
             const allClasses = [];
 
             // Process each data row
             for (let r = 0; r < dataRows.length; r++) {
                 const row = dataRows[r];
                 
-                // Process each location column set
-                for (let setIdx = 0; setIdx < locationCols.length; setIdx++) {
-                    const location = this.normalizeLocationName(row[locationCols[setIdx]]);
-                    if (!location) continue;
+                // Process each configured day block
+                for (const day of daysOrder) {
+                    const dayConfigs = dayColumnMappings[day] || [];
+                    for (const colConfig of dayConfigs) {
+                        const location = this.normalizeLocationName(row[colConfig.locationCol]);
+                        if (!location) continue;
 
-                    const dayRaw = dayRow[dayCols[setIdx]] || '';
-                    const day = daysOrder.find(d => 
-                        d.toLowerCase() === dayRaw.toString().toLowerCase()
-                    ) || '';
-                    
-                    // Skip if we can't determine the day
-                    if (!day || day === 'Unknown' || day === '') continue;
+                        const classNameRaw = row[colConfig.classCol];
+                        const className = this.normalizeClassNameForCleaned(classNameRaw);
+                        if (!className || !this.isValidClassName(className)) continue;
 
-                    const classNameRaw = row[classCols[setIdx]];
-                    const className = this.normalizeClassNameForCleaned(classNameRaw);
-                    if (!className || !this.isValidClassName(className)) continue;
-
-                    const trainerRaw = row[trainer1Cols[setIdx]];
-                    const coverRaw = row[coverCols[setIdx]];
-                    const themeRaw = row[trainer2Cols[setIdx]]; // Theme from Trainer 2 column
-                    
-                    // Parse time first so it's available for logging
-                    const timeRaw = row[timeColIndex];
-                    const timeDate = this.parseTimeToDate(timeRaw);
-                    let time = timeDate ? this.formatTime(timeDate) : timeRaw;
-                    
-                    let trainer = this.normalizeTrainerName(trainerRaw);
-                    let notes = '';
-                    
-                    // **STEP 1: Check if this is a hosted class (class name = "hosted") - CHECK THIS FIRST**
-                    const isHostedClass = (trainerRaw && trainerRaw.toString().toLowerCase().includes('hosted')) || 
-                                         (classNameRaw && classNameRaw.toString().toLowerCase().includes('hosted'));
-                    
-                    // If hosted class, mark as SOLD OUT and use cover trainer if available
-                    if (isHostedClass) {
-                        notes = 'SOLD OUT';
-                        // For hosted classes, if there's a cover, that's the actual trainer doing the class
-                        if (coverRaw && coverRaw.toString().trim() && coverRaw.toString().toLowerCase() !== 'undefined') {
-                            trainer = this.normalizeTrainerName(coverRaw);
-                            console.log(`  Hosted class at ${day} ${time} - marked as SOLD OUT - Trainer: ${trainer}`);
+                        const trainerRaw = row[colConfig.trainer1Col];
+                        const coverRaw = colConfig.coverCol >= 0 ? row[colConfig.coverCol] : '';
+                        const themeRaw = colConfig.themeCol >= 0 ? row[colConfig.themeCol] : row[colConfig.trainer2Col];
+                        
+                        // Parse time first so it's available for logging
+                        const timeRaw = row[timeColIndex];
+                        const timeDate = this.parseTimeToDate(timeRaw);
+                        let time = timeDate ? this.formatTime(timeDate) : timeRaw;
+                        
+                        let trainer = this.normalizeTrainerName(trainerRaw);
+                        let notes = '';
+                        
+                        // **STEP 1: Check if this is a hosted class (class name = "hosted") - CHECK THIS FIRST**
+                        const isHostedClass = (trainerRaw && trainerRaw.toString().toLowerCase().includes('hosted')) || 
+                                             (classNameRaw && classNameRaw.toString().toLowerCase().includes('hosted'));
+                        
+                        // If hosted class, mark as SOLD OUT and use cover trainer if available
+                        if (isHostedClass) {
+                            notes = 'SOLD OUT';
+                            // For hosted classes, if there's a cover, that's the actual trainer doing the class
+                            if (coverRaw && coverRaw.toString().trim() && coverRaw.toString().toLowerCase() !== 'undefined') {
+                                trainer = this.normalizeTrainerName(coverRaw);
+                                console.log(`  Hosted class at ${day} ${time} - marked as SOLD OUT - Trainer: ${trainer}`);
+                            } else {
+                                console.log(`  Hosted class at ${day} ${time} - marked as SOLD OUT`);
+                            }
                         } else {
-                            console.log(`  Hosted class at ${day} ${time} - marked as SOLD OUT`);
-                        }
-                    } else {
-                        // **STEP 2: For non-hosted classes, check if Cover column has a value**
-                        // If Cover column has a value, replace Trainer 1 with the cover trainer
-                        if (coverRaw && coverRaw.toString().trim() && coverRaw.toString().toLowerCase() !== 'undefined') {
-                            const coverNorm = this.normalizeTrainerName(coverRaw);
-                            // Skip if cover is just "Yes" or similar indicators (not a real trainer name)
-                            const invalidCoverValues = ['yes', 'no', 'true', 'false', 'y', 'n', 'x', '1', '0'];
-                            if (coverNorm && !invalidCoverValues.includes(coverNorm.toLowerCase())) {
-                                const originalTrainer = trainer || 'regular instructor';
-                                notes = `Cover: ${coverNorm} for ${originalTrainer}`;
-                                trainer = coverNorm; // Replace trainer with cover
-                                console.log(`  ✓ Applied cover at ${day} ${time}: ${coverNorm} covering for ${originalTrainer}`);
+                            // **STEP 2: For non-hosted classes, check if Cover column has a value**
+                            // If Cover column has a value, replace Trainer 1 with the cover trainer
+                            if (coverRaw && coverRaw.toString().trim() && coverRaw.toString().toLowerCase() !== 'undefined') {
+                                const coverNorm = this.normalizeTrainerName(coverRaw);
+                                // Skip if cover is just "Yes" or similar indicators (not a real trainer name)
+                                const invalidCoverValues = ['yes', 'no', 'true', 'false', 'y', 'n', 'x', '1', '0'];
+                                if (coverNorm && !invalidCoverValues.includes(coverNorm.toLowerCase())) {
+                                    const originalTrainer = trainer || 'regular instructor';
+                                    notes = `Cover: ${coverNorm} for ${originalTrainer}`;
+                                    trainer = coverNorm; // Replace trainer with cover
+                                    console.log(`  ✓ Applied cover at ${day} ${time}: ${coverNorm} covering for ${originalTrainer}`);
+                                }
                             }
                         }
-                    }
-                    
-                    // Exclude classes without a trainer (unless hosted and will be filled from email)
-                    if (!trainer && !isHostedClass) continue;
-                    // Normalize time for consistent alignment
-                    time = this.normalizeTimeDisplay(time);
-                    
-                    // Get actual date from row 2 (same column as location)
-                    const rawDate = dateRow[locationCols[setIdx]];
-                    const date = rawDate && rawDate.toString().trim() ? 
-                        this.formatDateFromSheet(rawDate.toString().trim()) : 
-                        this.getDateForDay(day); // fallback to calculated date
-                    
-                    // Add theme to notes if present and not a trainer name
-                    let theme = '';
-                    if (themeRaw && themeRaw.toString().trim()) {
-                        const themeValue = themeRaw.toString().trim();
-                        // Only use as theme if it's not a trainer name
-                        if (!this.isTrainerName(themeValue)) {
-                            theme = themeValue;
-                        }
-                    }
 
-                    allClasses.push({
-                        Day: day,
-                        Time: time,
-                        Location: location,
-                        Class: className,
-                        Trainer: trainer,
-                        Notes: notes,
-                        Date: date,
-                        Theme: theme
-                    });
+                        // Exclude classes without a trainer (unless hosted and will be filled from email)
+                        if (!trainer && !isHostedClass) continue;
+                        // Normalize time for consistent alignment
+                        time = this.normalizeTimeDisplay(time);
+                        
+                        // Get actual date from row 2 (same column as day header if possible)
+                        const rawDate = dateRow[colConfig.dayCol] || dateRow[colConfig.locationCol];
+                        const date = rawDate && rawDate.toString().trim() ? 
+                            this.formatDateFromSheet(rawDate.toString().trim()) : 
+                            this.getDateForDay(day); // fallback to calculated date
+                        
+                        // Use theme directly from Theme column when present
+                        let theme = '';
+                        if (themeRaw && themeRaw.toString().trim()) {
+                            const themeValue = themeRaw.toString().trim();
+                            // Only use as theme if it's not a trainer name
+                            if (!this.isTrainerName(themeValue)) {
+                                theme = themeValue;
+                            }
+                        }
+
+                        allClasses.push({
+                            Day: day,
+                            Time: time,
+                            Location: location,
+                            Class: className,
+                            Trainer: trainer,
+                            Notes: notes,
+                            Date: date,
+                            Theme: theme
+                        });
+                    }
                 }
             }
 
@@ -2958,107 +3138,36 @@ Return ONLY valid JSON, no other text.`;
      * Analyze the complex multi-day spreadsheet structure
      */
     analyzeSheetStructure(values) {
+        const scheduleLayout = this.detectScheduleHeaderRows(values);
         const structure = {
             dayColumns: {},
             coverColumns: {},
             trainer2Columns: {},
-            headerRows: 4 // Headers are in row 4 (index 3)
+            themeColumns: {},
+            headerRows: scheduleLayout.dataStartRowIndex,
+            timeColumn: 0
         };
 
-        // Row 3 (index 2) has day names, row 4 (index 3) has headers
-        const dayRow = values[2] || [];    // Row 3 has days
-        const headerRow = values[3] || []; // Row 4 has headers like "Trainer 2", "Cover"
-        
-        // Find day columns and their associated data columns
-        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-        
-        for (let colIndex = 0; colIndex < dayRow.length; colIndex++) {
-            const cellValue = String(dayRow[colIndex] || '').trim();
-            
-            for (const day of days) {
-                if (cellValue.toLowerCase().includes(day.toLowerCase())) {
-                    if (!structure.dayColumns[day]) {
-                        structure.dayColumns[day] = [];
-                    }
-                    
-                    // Use known pattern-based mapping based on the header structure we observed
-                    // Col 0: Time, Col 1: Location, Col 2: Class, Col 3: Trainer 1, Col 4: Trainer 2, Col 6: Cover
-                    // Then: Col 7: Location, Col 8: Class, Col 9: Trainer 1, Col 11: Trainer 2, Col 12: Cover, etc.
-                    
-                    let locationCol = -1;
-                    let classCol = -1;
-                    let trainer1Col = -1;
-                    let trainer2Col = -1;
-                    let coverCol = -1;
-                    
-                    // Column mappings must match cleanAndPopulateCleanedSheet exactly:
-                    // locationCols = [1, 7, 13, 18, 23, 28, 33];
-                    // classCols = [2, 8, 14, 19, 24, 29, 34];
-                    // trainer1Cols = [3, 9, 15, 20, 25, 30, 35];
-                    // trainer2Cols = [4, 10, 16, 21, 26, 31, 36]; // For themes
-                    // coverCols = [6, 12, 17, 22, 27, 32, 37];
-                    
-                    if (day === 'Monday' && colIndex === 1) {
-                        locationCol = 1; classCol = 2; trainer1Col = 3; trainer2Col = 4; coverCol = 6;
-                    } else if (day === 'Tuesday' && colIndex === 7) {
-                        locationCol = 7; classCol = 8; trainer1Col = 9; trainer2Col = 10; coverCol = 12;
-                    } else if (day === 'Wednesday' && colIndex === 13) {
-                        locationCol = 13; classCol = 14; trainer1Col = 15; trainer2Col = 16; coverCol = 17;
-                    } else if (day === 'Thursday' && colIndex === 18) {
-                        locationCol = 18; classCol = 19; trainer1Col = 20; trainer2Col = 21; coverCol = 22;
-                    } else if (day === 'Friday' && colIndex === 23) {
-                        locationCol = 23; classCol = 24; trainer1Col = 25; trainer2Col = 26; coverCol = 27;
-                    } else if (day === 'Saturday' && colIndex === 28) {
-                        locationCol = 28; classCol = 29; trainer1Col = 30; trainer2Col = 31; coverCol = 32;
-                    } else if (day === 'Sunday' && colIndex === 33) {
-                        locationCol = 33; classCol = 34; trainer1Col = 35; trainer2Col = 36; coverCol = 37;
-                    } else {
-                        // Fallback: search for headers if the pattern doesn't match
-                        for (let searchCol = colIndex - 6; searchCol <= colIndex + 6; searchCol++) {
-                            if (searchCol >= 0 && searchCol < headerRow.length) {
-                                const headerValue = String(headerRow[searchCol] || '').toLowerCase().trim();
-                                
-                                if (headerValue === 'location' && locationCol === -1 && Math.abs(searchCol - colIndex) <= 6) {
-                                    locationCol = searchCol;
-                                }
-                                if (headerValue === 'class' && classCol === -1 && Math.abs(searchCol - colIndex) <= 6) {
-                                    classCol = searchCol;
-                                }
-                                if (headerValue === 'trainer 1' && trainer1Col === -1 && Math.abs(searchCol - colIndex) <= 6) {
-                                    trainer1Col = searchCol;
-                                }
-                                if (headerValue === 'trainer 2' && trainer2Col === -1 && Math.abs(searchCol - colIndex) <= 6) {
-                                    trainer2Col = searchCol;
-                                }
-                                if (headerValue === 'cover' && coverCol === -1 && Math.abs(searchCol - colIndex) <= 6) {
-                                    coverCol = searchCol;
-                                }
-                            }
-                        }
-                    }
-                    
-                    
-                    // Ensure we have valid column mappings
-                    if (locationCol !== -1 && classCol !== -1 && trainer1Col !== -1 && trainer2Col !== -1) {
-                        structure.dayColumns[day].push({
-                            dayCol: colIndex,
-                            locationCol: locationCol,
-                            classCol: classCol,
-                            trainer1Col: trainer1Col,
-                            trainer2Col: trainer2Col,
-                            coverCol: coverCol
-                        });
-                        
-                        // Update the structure collections
-                        structure.trainer2Columns[day] = trainer2Col;
-                        structure.coverColumns[day] = coverCol;
-                        
-                        console.log(`📋 Found ${day} at column ${colIndex}, location: ${locationCol}, class: ${classCol}, trainer1: ${trainer1Col}, trainer2: ${trainer2Col}, cover: ${coverCol}`);
-                    } else {
-                        console.log(`❌ Invalid column mapping for ${day} - skipping`);
-                    }
-                    break;
-                }
+        const headerRow = values[scheduleLayout.headerRowIndex] || [];
+        const detectedTimeCol = this.getTimeColumnIndexFromHeader(headerRow);
+        if (detectedTimeCol >= 0) {
+            structure.timeColumn = detectedTimeCol;
+        }
+
+        const dayMappings = this.buildDayColumnMappings(values);
+        for (const [day, configs] of Object.entries(dayMappings)) {
+            if (!configs || configs.length === 0) continue;
+            structure.dayColumns[day] = configs;
+
+            const primary = configs[0];
+            structure.trainer2Columns[day] = primary.trainer2Col;
+            structure.coverColumns[day] = primary.coverCol;
+            structure.themeColumns[day] = primary.themeCol;
+
+            for (const config of configs) {
+                console.log(
+                    `📋 Found ${day}: day=${config.dayCol}, location=${config.locationCol}, class=${config.classCol}, trainer1=${config.trainer1Col}, trainer2=${config.trainer2Col}, cover=${config.coverCol}, theme=${config.themeCol}`
+                );
             }
         }
 
@@ -3066,10 +3175,11 @@ Return ONLY valid JSON, no other text.`;
     }
 
     /**
-     * Apply email data (covers and themes) to the existing sheet structure
+     * Apply email cover data to the existing sheet structure.
+     * Theme values are sourced directly from sheet Theme columns.
      */
     applyEmailDataToSheet(currentValues, emailInfo, structure) {
-        console.log(`🔄 Applying ${emailInfo.covers.length} covers and ${emailInfo.themes.length} themes to sheet...`);
+        console.log(`🔄 Applying ${emailInfo.covers.length} covers to sheet...`);
         
         // Create a copy of current values to modify
         const updatedValues = currentValues.map(row => [...row]);
@@ -3103,9 +3213,9 @@ Return ONLY valid JSON, no other text.`;
                 
                 // Check each day column configuration for this day
                 for (const colConfig of dayColumns) {
-                    if (!colConfig.coverCol || colConfig.coverCol >= row.length) continue;
+                    if (typeof colConfig.coverCol !== 'number' || colConfig.coverCol < 0 || colConfig.coverCol >= row.length) continue;
                     
-                    const timeCell = String(row[0] || '').trim(); // Time is usually in first column
+                    const timeCell = String(row[structure.timeColumn] || '').trim();
                     const locationCell = String(row[colConfig.locationCol] || '').trim().toLowerCase();
                     const classCell = String(row[colConfig.classCol] || '').toLowerCase();
                     
@@ -3230,189 +3340,8 @@ Return ONLY valid JSON, no other text.`;
             }
         }
 
-        // Apply themes with fixed matching logic for actual class names
-        for (const theme of emailInfo.themes) {
-            console.log(`🎨 Processing theme #${emailInfo.themes.indexOf(theme) + 1}/${emailInfo.themes.length}: ${theme.theme} (Type: ${theme.classType}, Day: ${theme.day}, Location: ${theme.location})`);
-            
-            if (theme.classType === 'FIT' && theme.location === 'All') {
-                // Apply theme to all FIT classes across all days
-                console.log(`🔍 Looking for FIT classes across all days for theme: ${theme.theme}`);
-                
-                for (const [dayName, dayColumns] of Object.entries(structure.dayColumns)) {
-                    if (!dayColumns) continue;
-                    
-                    for (const colConfig of dayColumns) {
-                        for (let rowIndex = structure.headerRows; rowIndex < updatedValues.length; rowIndex++) {
-                            const row = updatedValues[rowIndex];
-                            if (!row || row.length <= colConfig.trainer2Col) continue;
-                            
-                            const classCell = String(row[colConfig.classCol] || '').trim();
-                            const timeCell = String(row[0] || '').trim();
-                            const locationCell = String(row[colConfig.locationCol] || '').toLowerCase().trim();
-                            
-                            // Match FIT classes using dynamic matching
-                            if (this.classNamesMatch(classCell, 'fit') && timeCell) {
-                                row[colConfig.trainer2Col] = theme.theme;
-                                console.log(`✅ Applied FIT theme: ${theme.theme} to ${dayName} row ${rowIndex + 1}, col ${colConfig.trainer2Col + 1} (Class: "${classCell}", Time: "${timeCell}", Location: "${locationCell}")`);
-                                
-                                // Also update in-memory class data
-                                this.updateInMemoryClassTheme(dayName, timeCell, classCell, theme.theme);
-                                
-                                themesApplied++;
-                            }
-                        }
-                    }
-                }
-            } else if (theme.classType === 'Amped Up' && theme.day) {
-                // Apply to Amped Up classes on specific day at specific location
-                console.log(`🔍 Looking for Amped Up classes on ${theme.day} at ${theme.location}`);
-                
-                const dayColumns = structure.dayColumns[theme.day];
-                if (dayColumns) {
-                    console.log(`🔍 Found ${dayColumns.length} column configs for ${theme.day}`);
-                    for (const colConfig of dayColumns) {
-                        for (let rowIndex = structure.headerRows; rowIndex < updatedValues.length; rowIndex++) {
-                            const row = updatedValues[rowIndex];
-                            if (!row || row.length <= colConfig.trainer2Col) continue;
-                            
-                            const classCell = String(row[colConfig.classCol] || '').trim();
-                            const locationCell = String(row[colConfig.locationCol] || '').toLowerCase().trim();
-                            const timeCell = String(row[0] || '').trim();
-                            
-                            // Match Amped Up classes at correct location using dynamic matching
-                            if (this.classNamesMatch(classCell, 'amped up') && 
-                                this.matchLocation(locationCell, theme.location) && 
-                                timeCell) {
-                                console.log(`🎯 FOUND AMPED UP MATCH: Class="${classCell}" normalized="${this.normalizeClassName(classCell)}" Location="${locationCell}" matches="${this.matchLocation(locationCell, theme.location)}"`);
-                                row[colConfig.trainer2Col] = theme.theme;
-                                console.log(`✅ Applied Amped Up theme: ${theme.theme} to ${theme.day} row ${rowIndex + 1}, col ${colConfig.trainer2Col + 1} (Class: "${classCell}", Time: "${timeCell}", Location: "${locationCell}")`);
-                                
-                                // Also update in-memory class data
-                                this.updateInMemoryClassTheme(theme.day, timeCell, classCell, theme.theme);
-                                
-                                themesApplied++;
-                            }
-                        }
-                    }
-                }
-            } else if (theme.classType === 'CYCLE' && theme.location === 'Bandra' && theme.time && theme.day) {
-                // Apply to specific cycle classes at Bandra with exact time and day matching
-                console.log(`🔍 Looking for cycle classes on ${theme.day} at ${theme.location} at time ${theme.time}`);
-                
-                const dayColumns = structure.dayColumns[theme.day];
-                if (dayColumns) {
-                    console.log(`🔍 Found ${dayColumns.length} column configs for ${theme.day}`);
-                    for (const colConfig of dayColumns) {
-                        for (let rowIndex = structure.headerRows; rowIndex < updatedValues.length; rowIndex++) {
-                            const row = updatedValues[rowIndex];
-                            if (!row || row.length <= colConfig.trainer2Col) continue;
-                            
-                            const timeCell = String(row[0] || '').trim();
-                            const classCell = String(row[colConfig.classCol] || '').trim();
-                            const locationCell = String(row[colConfig.locationCol] || '').toLowerCase().trim();
-                            
-                            // Match cycle classes at Bandra with matching time using dynamic matching
-                            if (this.classNamesMatch(classCell, 'cycle') && 
-                                this.matchLocation(locationCell, 'bandra') && 
-                                timeCell) {
-                                
-                                // Normalize times for exact comparison
-                                const themeTime = this.normalizeTimeFormat(theme.time);
-                                const cellTime = this.normalizeTimeFormat(timeCell);
-                                
-                                console.log(`🔍 Time comparison: "${cellTime}" vs "${themeTime}" for theme: ${theme.theme}`);
-                                
-                                // Exact time match required
-                                if (cellTime === themeTime) {
-                                    row[colConfig.trainer2Col] = theme.theme;
-                                    console.log(`✅ Applied Bandra cycle theme: ${theme.theme} to ${theme.day} row ${rowIndex + 1}, col ${colConfig.trainer2Col + 1} (Class: "${classCell}", Time: "${timeCell}", Location: "${locationCell}")`);
-                                    
-                                    // Also update in-memory class data
-                                    this.updateInMemoryClassTheme(theme.day, timeCell, classCell, theme.theme);
-                                    
-                                    themesApplied++;
-                                } else {
-                                    console.log(`❌ Time mismatch: "${cellTime}" ≠ "${themeTime}" for ${theme.theme}`);
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                // Handle other specific theme types with flexible validation
-                console.log(`🔍 Looking for ${theme.classType || 'general'} classes on ${theme.day}`);
-                
-                // Special handling for PowerCycle themes
-                if ((theme.classType === 'CYCLE' || theme.classType === 'PowerCycle' || theme.type === 'powercycle') && theme.day && theme.time && theme.location) {
-                    console.log(`🚴 Processing PowerCycle theme: ${theme.theme} for ${theme.day} ${theme.time} at ${theme.location}`);
-                    
-                    const dayColumns = structure.dayColumns[theme.day];
-                    if (dayColumns) {
-                        console.log(`🔍 Found ${dayColumns.length} column configs for ${theme.day}`);
-                        for (const colConfig of dayColumns) {
-                            for (let rowIndex = structure.headerRows; rowIndex < updatedValues.length; rowIndex++) {
-                                const row = updatedValues[rowIndex];
-                                if (!row || row.length <= colConfig.trainer2Col) continue;
-                                
-                                const timeCell = String(row[0] || '').trim();
-                                const classCell = String(row[colConfig.classCol] || '').trim();
-                                const locationCell = String(row[colConfig.locationCol] || '').toLowerCase().trim();
-                                
-                                // Check if this is a cycle/powercycle class
-                                if (this.classNamesMatch(classCell, 'cycle') || this.classNamesMatch(classCell, 'powercycle')) {
-                                    // Check location match
-                                    const locationMatches = this.matchLocation(locationCell, theme.location);
-                                    console.log(`   📍 Location check: Sheet="${locationCell}" Theme="${theme.location}" Match=${locationMatches}`);
-                                    if (locationMatches) {
-                                        // Check time match - handle format variations
-                                        const themeTime = this.normalizeTimeFormat(theme.time);
-                                        const cellTime = this.normalizeTimeFormat(timeCell);
-                                        
-                                        console.log(`   🔍 PowerCycle match attempt: Sheet="${cellTime}" Theme="${themeTime}" Location="${locationCell}" (Match: ${cellTime === themeTime})`);
-                                        
-                                        if (cellTime === themeTime) {
-                                            row[colConfig.trainer2Col] = theme.theme;
-                                            console.log(`✅ Applied PowerCycle theme: ${theme.theme} to ${theme.day} row ${rowIndex + 1}, col ${colConfig.trainer2Col + 1} (Class: "${classCell}", Time: "${timeCell}", Location: "${locationCell}")`);
-                                            
-                                            // Also update in-memory class data
-                                            this.updateInMemoryClassTheme(theme.day, timeCell, classCell, theme.theme);
-                                            
-                                            themesApplied++;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else if (theme.day && theme.day !== 'All') {
-                    const dayColumns = structure.dayColumns[theme.day];
-                    if (dayColumns) {
-                        for (const colConfig of dayColumns) {
-                            for (let rowIndex = structure.headerRows; rowIndex < updatedValues.length; rowIndex++) {
-                                const row = updatedValues[rowIndex];
-                                if (!row || row.length <= colConfig.trainer2Col) continue;
-                                
-                                const classCell = String(row[colConfig.classCol] || '').toLowerCase().trim();
-                                const timeCell = String(row[0] || '').trim();
-                                const locationCell = String(row[colConfig.locationCol] || '').toLowerCase().trim();
-                                
-                                // Only apply if we have exact class type match
-                                if (classCell && theme.classType && 
-                                    classCell.includes(theme.classType.toLowerCase()) && 
-                                    timeCell) {
-                                    row[colConfig.trainer2Col] = theme.theme;
-                                    console.log(`✅ Applied ${theme.classType} theme: ${theme.theme} to ${theme.day} row ${rowIndex + 1}, col ${colConfig.trainer2Col + 1} (Class: "${classCell}", Time: "${timeCell}", Location: "${locationCell}")`);
-                                    
-                                    // Also update in-memory class data
-                                    this.updateInMemoryClassTheme(theme.day, timeCell, classCell, theme.theme);
-                                    
-                                    themesApplied++;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        if (emailInfo.themes && emailInfo.themes.length > 0) {
+            console.log('ℹ️  Skipping email theme application. Theme values are sourced directly from the sheet Theme columns.');
         }
 
         console.log(`📊 Applied ${coversApplied} covers and ${themesApplied} themes to spreadsheet`);
@@ -5783,7 +5712,7 @@ Return ONLY valid JSON, no other text.`;
                 // STEP 1: Process email and update Google Sheets
                 console.log('📧 Step 1: Processing email and updating Google Sheets...');
                 await this.processEmailAndUpdateSchedule();
-                console.log('✅ Google Sheets updated with email data\n');
+            console.log('✅ Google Sheets updated with latest linked sheet and email cover updates\n');
             }
             
             // STEP 2: Update HTML and PDF directly from Google Sheets
@@ -5792,7 +5721,8 @@ Return ONLY valid JSON, no other text.`;
             
             console.log('🎉 Complete Google Sheets workflow finished successfully!');
             console.log('🔍 Summary of updates:');
-            console.log('   - Google Sheets updated with email covers and themes');
+            console.log('   - Google Sheets updated with email covers');
+            console.log('   - Themes sourced directly from Schedule sheet Theme columns');
             console.log('   - Cleaned sheet populated with correct dates from Schedule sheet');
             console.log('   - HTML updated directly from Google Sheets Cleaned data');
             console.log('   - PDF generated and uploaded');
@@ -5813,42 +5743,39 @@ Return ONLY valid JSON, no other text.`;
         }
 
         const covers = [];
-        
-        // Use known column mappings (must match cleanAndPopulateCleanedSheet exactly)
-        const columnMappings = {
-            'Monday': { location: 1, class: 2, trainer1: 3, trainer2: 4, cover: 6 },
-            'Tuesday': { location: 7, class: 8, trainer1: 9, trainer2: 10, cover: 12 },
-            'Wednesday': { location: 13, class: 14, trainer1: 15, trainer2: 16, cover: 17 },
-            'Thursday': { location: 18, class: 19, trainer1: 20, trainer2: 21, cover: 22 },
-            'Friday': { location: 23, class: 24, trainer1: 25, trainer2: 26, cover: 27 },
-            'Saturday': { location: 28, class: 29, trainer1: 30, trainer2: 31, cover: 32 },
-            'Sunday': { location: 34, class: 35, trainer1: 36, trainer2: 37, cover: 38 }
-        };
+        const daysOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        const structure = this.analyzeSheetStructure(sheetData);
+        const timeColIndex = structure.timeColumn;
         
         // Scan rows for covers (starting from row 5, index 4)
-        for (let rowIndex = 4; rowIndex < sheetData.length; rowIndex++) {
+        for (let rowIndex = structure.headerRows; rowIndex < sheetData.length; rowIndex++) {
             const row = sheetData[rowIndex];
-            if (!row || !row[0]) continue; // Skip rows without time
+            if (!row || !row[timeColIndex]) continue; // Skip rows without time
             
-            const time = String(row[0] || '').trim();
+            const time = String(row[timeColIndex] || '').trim();
             
-            // Check each day's cover column
-            for (const [dayName, columns] of Object.entries(columnMappings)) {
-                const location = String(row[columns.location] || '').trim();
-                const className = String(row[columns.class] || '').trim();
-                const trainer1 = String(row[columns.trainer1] || '').trim();
-                const cover = String(row[columns.cover] || '').trim();
-                
-                if (cover && cover.toLowerCase() !== 'undefined' && location && time) {
-                    covers.push({
-                        source: 'spreadsheet',
-                        day: dayName,
-                        time: time,
-                        location: location,
-                        className: className,
-                        originalTrainer: trainer1,
-                        coverTrainer: cover
-                    });
+            // Check each day block's cover column
+            for (const dayName of daysOrder) {
+                const dayConfigs = structure.dayColumns[dayName] || [];
+                for (const columns of dayConfigs) {
+                    if (typeof columns.coverCol !== 'number' || columns.coverCol < 0) continue;
+
+                    const location = String(row[columns.locationCol] || '').trim();
+                    const className = String(row[columns.classCol] || '').trim();
+                    const trainer1 = String(row[columns.trainer1Col] || '').trim();
+                    const cover = String(row[columns.coverCol] || '').trim();
+                    
+                    if (cover && cover.toLowerCase() !== 'undefined' && location && time) {
+                        covers.push({
+                            source: 'spreadsheet',
+                            day: dayName,
+                            time: time,
+                            location: location,
+                            className: className,
+                            originalTrainer: trainer1,
+                            coverTrainer: cover
+                        });
+                    }
                 }
             }
         }
@@ -5865,36 +5792,34 @@ Return ONLY valid JSON, no other text.`;
             return;
         }
 
-        // Use known column mappings (must match cleanAndPopulateCleanedSheet exactly)
-        const columnMappings = {
-            'Monday': { location: 1, class: 2, trainer1: 3, trainer2: 4, cover: 6 },
-            'Tuesday': { location: 7, class: 8, trainer1: 9, trainer2: 10, cover: 12 },
-            'Wednesday': { location: 13, class: 14, trainer1: 15, trainer2: 16, cover: 17 },
-            'Thursday': { location: 18, class: 19, trainer1: 20, trainer2: 21, cover: 22 },
-            'Friday': { location: 23, class: 24, trainer1: 25, trainer2: 26, cover: 27 },
-            'Saturday': { location: 28, class: 29, trainer1: 30, trainer2: 31, cover: 32 },
-            'Sunday': { location: 34, class: 35, trainer1: 36, trainer2: 37, cover: 38 }
-        };
+        const daysOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        const structure = this.analyzeSheetStructure(sheetData);
+        const timeColIndex = structure.timeColumn;
 
         console.log('Analyzing spreadsheet for covers...\n');
         
         // Scan rows for covers (starting from row 5, index 4)
-        for (let rowIndex = 4; rowIndex < sheetData.length; rowIndex++) {
+        for (let rowIndex = structure.headerRows; rowIndex < sheetData.length; rowIndex++) {
             const row = sheetData[rowIndex];
-            if (!row || !row[0]) continue; // Skip rows without time
+            if (!row || !row[timeColIndex]) continue; // Skip rows without time
             
-            const time = String(row[0] || '').trim();
+            const time = String(row[timeColIndex] || '').trim();
             
-            // Check each day's cover column
-            for (const [dayName, columns] of Object.entries(columnMappings)) {
-                const location = String(row[columns.location] || '').trim();
-                const className = String(row[columns.class] || '').trim();
-                const trainer1 = String(row[columns.trainer1] || '').trim();
-                const cover = String(row[columns.cover] || '').trim();
-                
-                // Only log rows with covers
-                if (cover && cover.toLowerCase() !== 'undefined' && location) {
-                    console.log(`📍 ${dayName.padEnd(10)} | ${time.padEnd(10)} | ${location.padEnd(10)} | ${className.padEnd(20)} | Trainer: ${trainer1.padEnd(15)} | Cover: ${cover}`);
+            // Check each day block's cover column
+            for (const dayName of daysOrder) {
+                const dayConfigs = structure.dayColumns[dayName] || [];
+                for (const columns of dayConfigs) {
+                    if (typeof columns.coverCol !== 'number' || columns.coverCol < 0) continue;
+
+                    const location = String(row[columns.locationCol] || '').trim();
+                    const className = String(row[columns.classCol] || '').trim();
+                    const trainer1 = String(row[columns.trainer1Col] || '').trim();
+                    const cover = String(row[columns.coverCol] || '').trim();
+                    
+                    // Only log rows with covers
+                    if (cover && cover.toLowerCase() !== 'undefined' && location) {
+                        console.log(`📍 ${dayName.padEnd(10)} | ${time.padEnd(10)} | ${location.padEnd(10)} | ${className.padEnd(20)} | Trainer: ${trainer1.padEnd(15)} | Cover: ${cover}`);
+                    }
                 }
             }
         }
@@ -6175,29 +6100,27 @@ Return ONLY valid JSON, no other text.`;
         const isMorning = pattern.toLowerCase().includes('morning');
         const isEvening = pattern.toLowerCase().includes('evening');
         
-        const dayRow = this.rawSpreadsheetData[2];
-        const headerRow = this.rawSpreadsheetData[3];
-        
-        // Find columns for this day
-        for (let colIndex = 0; colIndex < dayRow.length; colIndex++) {
-            const dayName = String(dayRow[colIndex] || '').trim();
-            if (dayName !== day) continue;
-            
-            const locationColIndex = colIndex;
-            const classColIndex = colIndex + 1;
-            const trainer1ColIndex = colIndex + 2;
-            
-            // Scan all rows for matching classes
-            for (let rowIndex = 4; rowIndex < this.rawSpreadsheetData.length; rowIndex++) {
-                const row = this.rawSpreadsheetData[rowIndex];
-                if (!row || !row[0]) continue;
+        const structure = this.analyzeSheetStructure(this.rawSpreadsheetData);
+        const timeColIndex = structure.timeColumn;
+        const dayKey = Object.keys(structure.dayColumns).find(d => d.toLowerCase() === String(day).toLowerCase()) || day;
+        const dayConfigs = structure.dayColumns[dayKey] || [];
+
+        if (dayConfigs.length === 0) return matches;
+
+        // Scan all rows for matching classes in this day block
+        for (let rowIndex = structure.headerRows; rowIndex < this.rawSpreadsheetData.length; rowIndex++) {
+            const row = this.rawSpreadsheetData[rowIndex];
+            if (!row || !row[timeColIndex]) continue;
+
+            const time = String(row[timeColIndex] || '').trim();
+            if (!time) continue;
+
+            for (const cfg of dayConfigs) {
+                const cellLocation = String(row[cfg.locationCol] || '').trim();
+                const className = String(row[cfg.classCol] || '').trim();
+                const trainer = String(row[cfg.trainer1Col] || '').trim();
                 
-                const time = String(row[0] || '').trim();
-                const cellLocation = String(row[locationColIndex] || '').trim();
-                const className = String(row[classColIndex] || '').trim();
-                const trainer = String(row[trainer1ColIndex] || '').trim();
-                
-                if (!time || !cellLocation || !className) continue;
+                if (!cellLocation || !className) continue;
                 
                 // Check time pattern
                 const timeLower = time.toLowerCase();
@@ -6215,7 +6138,7 @@ Return ONLY valid JSON, no other text.`;
                 
                 matches.push({
                     source: 'spreadsheet',
-                    day: day,
+                    day: dayKey,
                     time: time,
                     location: cellLocation,
                     className: className,
