@@ -62,7 +62,7 @@ const DYNAMIC_ROW_MODE = true;
  */
 
 class ScheduleUpdater {
-    constructor(htmlPath, outputPath, location = 'kemps') {
+    constructor(htmlPath, outputPath, location = 'kemps', options = {}) {
         this.htmlPath = htmlPath;
         this.outputPath = outputPath || htmlPath;
         this.kwalityClasses = [];
@@ -70,6 +70,9 @@ class ScheduleUpdater {
         this.$ = null;
         this.currentLocation = location.toLowerCase(); // Track current location for theme badge styling
         this.locationName = this.currentLocation.charAt(0).toUpperCase() + this.currentLocation.slice(1); // 'Kemps' or 'Bandra'
+        this.themeRenderMode = options.themeRenderMode === 'static' ? 'static' : 'badge';
+        this.staticThemeRows = [];
+        this.staticThemeColorMap = new Map();
         
         // Initialize enhanced mapping system
         this.enhancedMapper = new EnhancedScheduleMapper();
@@ -758,6 +761,41 @@ Return ONLY valid JSON, no other text.`;
     }
 
     /**
+     * Check whether a subject line looks like the weekly Mumbai schedule email.
+     */
+    isWeeklyMumbaiScheduleSubject(subject = '') {
+        const normalized = String(subject).trim().toLowerCase();
+        if (!normalized) return false;
+
+        return normalized.includes('mumbai schedule') || /\b\d{1,2}\s*-\s*\d{1,2}(?:st|nd|rd|th)?\s+[a-z]{3}'?\d{2}\b/i.test(subject);
+    }
+
+    /**
+     * Score a candidate schedule email subject so weekly schedule threads outrank
+     * quarterly schedules, meetings, and other noisy schedule-related emails.
+     */
+    scoreScheduleEmailSubject(subject = '') {
+        const normalized = String(subject).trim().toLowerCase();
+        if (!normalized) return -1000;
+
+        const currentWeekPattern = this.getCurrentWeekSubjectPattern().toLowerCase();
+        let score = 0;
+
+        if (normalized.includes(currentWeekPattern)) score += 1000;
+        if (normalized.includes('mumbai schedule')) score += 500;
+        if (this.isWeeklyMumbaiScheduleSubject(subject)) score += 250;
+        if (/\b(re:|fwd:)\b/i.test(subject)) score += 25;
+
+        if (normalized.includes('quarterly')) score -= 1000;
+        if (normalized.includes('trail')) score -= 500;
+        if (normalized.includes('meeting')) score -= 500;
+        if (normalized.includes('invitation')) score -= 500;
+        if (normalized.includes('schedule format')) score -= 250;
+
+        return score;
+    }
+
+    /**
      * Get ordinal suffix for day (1st, 2nd, 3rd, 4th, etc.)
      */
     getOrdinalSuffix(day) {
@@ -785,7 +823,7 @@ Return ONLY valid JSON, no other text.`;
             
             // Search for the most recent schedule email from approved senders
             const senderQuery = EMAIL_CONFIG.SENDER_EMAILS.map(e => `from:${e}`).join(' OR ');
-            const searchQuery = `(${senderQuery}) subject:Schedule newer_than:7d`;
+            const searchQuery = `(${senderQuery}) subject:Schedule newer_than:21d`;
             console.log(`🔍 Email search query: ${searchQuery}`);
             
             let response = await gmail.users.messages.list({
@@ -801,7 +839,10 @@ Return ONLY valid JSON, no other text.`;
 
             console.log(`📬 Found ${response.data.messages.length} potential emails`);
             
-            // Get full metadata for all messages to sort by date
+            const currentWeekPattern = this.getCurrentWeekSubjectPattern();
+            console.log(`📅 Current week subject pattern: ${currentWeekPattern}`);
+
+            // Get full metadata for all messages to sort by date and subject relevance
             const messagesWithDates = await Promise.all(
                 response.data.messages.map(async (msg) => {
                     const detail = await gmail.users.messages.get({
@@ -816,13 +857,28 @@ Return ONLY valid JSON, no other text.`;
                         id: msg.id,
                         subject: subject,
                         date: date,
-                        internalDate: detail.data.internalDate
+                        internalDate: detail.data.internalDate,
+                        score: this.scoreScheduleEmailSubject(subject)
                     };
                 })
             );
-            
-            // Sort by internal date (milliseconds since epoch) - most recent first
-            messagesWithDates.sort((a, b) => parseInt(b.internalDate) - parseInt(a.internalDate));
+
+            console.log('📬 Candidate schedule emails ranked by subject relevance:');
+            messagesWithDates
+                .slice()
+                .sort((a, b) => {
+                    if (b.score !== a.score) return b.score - a.score;
+                    return parseInt(b.internalDate) - parseInt(a.internalDate);
+                })
+                .forEach((message, index) => {
+                    console.log(`   ${index + 1}. score=${message.score} | ${message.subject}`);
+                });
+
+            // Sort by relevance first, then by recency.
+            messagesWithDates.sort((a, b) => {
+                if (b.score !== a.score) return b.score - a.score;
+                return parseInt(b.internalDate) - parseInt(a.internalDate);
+            });
             
             const mostRecentMessage = messagesWithDates[0];
             console.log(`\n✅ Using most recent: "${mostRecentMessage.subject}"\n`);
@@ -3585,10 +3641,30 @@ Return ONLY valid JSON, no other text.`;
             _useHtmlParser2: true
         });
         console.log('✅ HTML loaded successfully');
+
+        this.resetStaticThemeState();
+        this.cleanupStaticThemeArtifacts();
         
         // Ensure sold-out badge CSS is present
         this.ensureSoldOutBadgeCSS();
         
+    }
+
+    /**
+     * Reset in-memory static theme rendering state.
+     */
+    resetStaticThemeState() {
+        this.staticThemeRows = [];
+        this.staticThemeColorMap = new Map();
+    }
+
+    /**
+     * Remove previously generated static theme overlays and index entries.
+     */
+    cleanupStaticThemeArtifacts() {
+        if (!this.$) return;
+
+        this.$('.theme-row-highlight, .theme-index-band, .theme-index-entry, .theme-index-title, .theme-static-label').remove();
     }
 
     /**
@@ -3807,6 +3883,212 @@ Return ONLY valid JSON, no other text.`;
     }
 
     /**
+     * Check whether theme text should render as static inline text instead of a badge.
+     */
+    shouldRenderStaticTheme() {
+        return this.themeRenderMode === 'static';
+    }
+
+    /**
+     * Create theme markup based on the current render mode.
+     */
+    createThemeMarkup(theme, location = 'kemps') {
+        if (!theme || !theme.trim()) {
+            return '';
+        }
+
+        return this.shouldRenderStaticTheme()
+            ? ''
+            : this.createThemeBadge(theme, location);
+    }
+
+    /**
+     * Register a themed row so static mode can render a background bar and theme index entry later.
+     */
+    registerStaticThemeRow(rowConfig) {
+        if (!this.shouldRenderStaticTheme()) return;
+        if (!rowConfig || !rowConfig.theme) return;
+
+        this.staticThemeRows.push({
+            theme: String(rowConfig.theme).trim(),
+            page: rowConfig.page,
+            timeLeft: rowConfig.timeLeft,
+            rowBottom: rowConfig.rowBottom,
+            highlightWidth: rowConfig.highlightWidth,
+            highlightHeight: rowConfig.highlightHeight || 23.2,
+            highlightLeft: rowConfig.highlightLeft,
+            classText: rowConfig.classText || ''
+        });
+    }
+
+    /**
+     * Build a stable theme->color map in first-seen order to mimic the fixed index file.
+     */
+    buildStaticThemeColorMap() {
+        const palette = [
+            '#F4C3DA', '#FEC95D', '#FEC870', '#BEE7F7', '#CDECCF', '#E8D5FF',
+            '#FFD6A5', '#FFCAD4', '#C7F9CC', '#A9DEF9', '#D0F4DE', '#FFF1A8',
+            '#E4C1F9', '#C1FBA4', '#F9C6C9', '#B8E1FF', '#FFD8BE', '#D9ED92'
+        ];
+        const colorMap = new Map();
+
+        this.staticThemeRows.forEach((row) => {
+            const themeKey = row.theme.trim().toUpperCase();
+            if (!colorMap.has(themeKey)) {
+                const nextIndex = colorMap.size;
+                if (nextIndex < palette.length) {
+                    colorMap.set(themeKey, palette[nextIndex]);
+                } else {
+                    const hue = (nextIndex * 47) % 360;
+                    colorMap.set(themeKey, `hsl(${hue}, 85%, 78%)`);
+                }
+            }
+        });
+
+        this.staticThemeColorMap = colorMap;
+    }
+
+    /**
+     * Determine which page contains a given span.
+     */
+    getPageNumberForSpan($span) {
+        const $section = $span.closest('section.page');
+        if ($section.length > 0) {
+            const ariaLabel = $section.attr('aria-label') || '';
+            const match = ariaLabel.match(/Page\s+(\d+)/i);
+            if (match) return parseInt(match[1], 10);
+        }
+
+        if ($span.closest('#pg2, #pg2Overlay').length > 0) return 2;
+        return 1;
+    }
+
+    /**
+     * Render the static row highlights and theme index after rows are updated.
+     */
+    renderStaticThemeArtifacts() {
+        if (!this.shouldRenderStaticTheme()) return;
+
+        this.cleanupStaticThemeArtifacts();
+
+        const validRows = this.staticThemeRows.filter(row => row.theme && row.theme.trim());
+        if (validRows.length === 0) {
+            console.log('ℹ️  No themed rows found for static theme rendering');
+            return;
+        }
+
+        this.buildStaticThemeColorMap();
+        this.renderStaticThemeHighlights(validRows);
+        this.renderStaticThemeIndex(validRows);
+        console.log(`✅ Rendered ${validRows.length} static theme highlights and ${this.staticThemeColorMap.size} index entries`);
+    }
+
+    /**
+     * Render flat highlight bars behind themed rows.
+     */
+    renderStaticThemeHighlights(rows) {
+        rows.forEach((row) => {
+            const themeKey = row.theme.trim().toUpperCase();
+            const color = this.staticThemeColorMap.get(themeKey) || '#FEC95D';
+            const $page = this.$('section.page').eq(Math.max(0, (row.page || 1) - 1));
+            const $container = $page.find('.text-container').first();
+            if (!$container.length) return;
+
+            const highlightHtml = `<span class="theme-row-highlight" style="position:absolute;left:${row.highlightLeft}px;bottom:${row.rowBottom - row.highlightHeight}px;width:${row.highlightWidth}px;height:${row.highlightHeight}px;background:${color};z-index:1;display:block;"></span>`;
+            $container.append(highlightHtml);
+        });
+    }
+
+    /**
+     * Render the theme names as an index near the end of the document, like index 7.html.
+     */
+    renderStaticThemeIndex(rows) {
+        const orderedThemes = Array.from(this.staticThemeColorMap.keys());
+        if (orderedThemes.length === 0) return;
+
+        const $lastPage = this.$('section.page').last();
+        const $container = $lastPage.find('.text-container').first();
+        if (!$container.length) return;
+
+        const startTextLeft = 571;
+        const startBandLeft = 482.7;
+        const startBottom = 304;
+        const lineGap = 37;
+        const columnGap = 185;
+        const maxRowsPerColumn = 5;
+        const bandWidth = 80.2;
+        const bandHeight = 23.2;
+        const bandTextGap = startTextLeft - startBandLeft - bandWidth;
+
+        orderedThemes.forEach((themeName, index) => {
+            const column = Math.floor(index / maxRowsPerColumn);
+            const row = index % maxRowsPerColumn;
+            const textLeft = startTextLeft + (column * columnGap);
+            const bandLeft = startBandLeft + (column * columnGap);
+            const bottom = startBottom - (row * lineGap);
+            const bandBottom = bottom - 2;
+            const color = this.staticThemeColorMap.get(themeName) || '#FEC95D';
+            const bandHtml = `<span class="theme-index-band" style="position:absolute;left:${bandLeft}px;bottom:${bandBottom}px;width:${bandWidth}px;height:${bandHeight}px;background:${color};z-index:1;display:block;"></span>`;
+            const entryHtml = `<span class="t v0 s8 theme-index-entry" style="left:${textLeft}px;bottom:${bottom}px;letter-spacing:0.21px;z-index:2;">${themeName}</span>`;
+            $container.append(bandHtml);
+            $container.append(entryHtml);
+        });
+    }
+
+    /**
+     * Pick one of the flat pastel highlight colors used in index 7.html.
+     */
+    getStaticThemeHighlightColor(theme) {
+        const palette = ['#F4C3DA', '#FEC95D', '#FEC870', '#BEE7F7', '#CDECCF', '#E8D5FF'];
+        const value = String(theme || '');
+        let hash = 0;
+
+        for (let i = 0; i < value.length; i++) {
+            hash = ((hash << 5) - hash) + value.charCodeAt(i);
+            hash |= 0;
+        }
+
+        return palette[Math.abs(hash) % palette.length];
+    }
+
+    /**
+     * Create static inline theme text inspired by the older fixed-layout exports.
+     */
+    createStaticThemeLabel(theme, location = 'kemps') {
+        const cleanTheme = theme.trim().toUpperCase();
+        const highlightColor = this.getStaticThemeHighlightColor(cleanTheme);
+
+        const staticStyle = {
+            background: highlightColor,
+            color: '#2C2D2D',
+            marginLeft: '10px',
+            display: 'inline-block',
+            verticalAlign: 'middle',
+            lineHeight: '1.5',
+            letterSpacing: '0.21px',
+            textTransform: 'uppercase',
+            fontSize: '13px',
+            fontWeight: '500',
+            fontFamily: 'Montserrat, sans-serif',
+            position: 'relative',
+            top: '-1px',
+            padding: '1px 12px 1px 12px',
+            borderRadius: '0',
+            whiteSpace: 'nowrap',
+            boxShadow: 'none',
+            border: 'none',
+            transform: 'scaleX(1.006)',
+            transformOrigin: 'left center'
+        };
+
+        const styleString = Object.entries(staticStyle)
+            .map(([key, value]) => `${key.replace(/[A-Z]/g, match => '-' + match.toLowerCase())}: ${value}`)
+            .join('; ');
+
+        return `<span class="theme-static-label" style="${styleString}">${cleanTheme}</span>`;
+    }
+
+    /**
      * Create a neat theme badge for display
      */
     createThemeBadge(theme, location = 'kemps') {
@@ -3862,11 +4144,12 @@ Return ONLY valid JSON, no other text.`;
      */
     cleanupAllThemeBadges() {
         console.log('🧹 Starting comprehensive theme badge cleanup...');
+        this.cleanupStaticThemeArtifacts();
         
         // Remove by CSS class - this removes the actual theme badge spans
-        const themeBadges = this.$('.theme-badge');
-        console.log(`   Found ${themeBadges.length} theme-badge elements to remove`);
-        themeBadges.remove();
+        const themeDecorations = this.$('.theme-badge, .theme-static-label');
+        console.log(`   Found ${themeDecorations.length} theme decoration elements to remove`);
+        themeDecorations.remove();
         
         // Get all spans and check for standalone theme badge content
         const allSpans = this.$('span');
@@ -3880,9 +4163,10 @@ Return ONLY valid JSON, no other text.`;
             // NOT class names like "PowerCycle - Instructor"
             const hasLightningEmoji = /[⚡️⚡]/.test(spanText);
             const isStandaloneThemeKeyword = /^\s*(?:POWER|THEME|SPECIAL)\s*$/i.test(spanText);
+            const hasStaticThemeClass = $span.hasClass('theme-static-label');
             
             // Only remove if it's clearly a theme badge, not a class description
-            if (hasLightningEmoji || isStandaloneThemeKeyword) {
+            if (hasLightningEmoji || isStandaloneThemeKeyword || hasStaticThemeClass) {
                 console.log(`   Removing span with theme badge content: "${spanText.substring(0, 50)}${spanText.length > 50 ? '...' : ''}"`);
                 $span.remove();
                 removedCount++;
@@ -4189,13 +4473,15 @@ Return ONLY valid JSON, no other text.`;
                 let badgeHtml = '';
                 // Only add theme badge if it's not "Sold Out" (sold out badge added separately)
                 if (theme && theme.trim() && theme.toLowerCase().trim() !== 'sold out') {
-                    badgeHtml += this.createThemeBadge(theme.trim(), this.currentLocation);
+                    badgeHtml += this.createThemeMarkup(theme.trim(), this.currentLocation);
                 }
                 if (isSoldOut) {
                     badgeHtml += ' <span class="sold-out-badge">SOLD OUT</span>';
                 }
 
                 const classLeft = dayLeft + TIME_CLASS_OFFSET;
+                const highlightLeft = Math.max(dayLeft - 2, 0);
+                const highlightWidth = 365;
                 // Create red strikethrough line for sold out classes that covers the time and class name (but not the badge)
                 let strikethroughHtml = '';
                 if (isSoldOut) {
@@ -4204,6 +4490,18 @@ Return ONLY valid JSON, no other text.`;
                 }
                 
                 const classSpanHtml = `<span class="t v0 s5" style="left:${classLeft}px;bottom:${currentBottom}px;font-family:Montserrat,sans-serif;font-weight:400;color:#1a1a1a;">${classText}${badgeHtml}</span>`;
+
+                if (theme && theme.trim() && theme.toLowerCase().trim() !== 'sold out' && this.shouldRenderStaticTheme()) {
+                    this.registerStaticThemeRow({
+                        theme,
+                        page: dayPage,
+                        timeLeft: dayLeft,
+                        rowBottom: currentBottom,
+                        highlightLeft,
+                        highlightWidth,
+                        classText
+                    });
+                }
 
                 // Parse and insert time span
                 const timeSpan = this.$(timeSpanHtml);
@@ -4692,7 +4990,7 @@ Return ONLY valid JSON, no other text.`;
                         const sameRow = Math.abs(currentBottom - timeSpanBottom) <= 5;
                         
                         // Enhanced badge removal - check for CSS classes, inline patterns, and content
-                        const hasThemeClass = $currentSpan.hasClass('theme-badge');
+                        const hasThemeClass = $currentSpan.hasClass('theme-badge') || $currentSpan.hasClass('theme-static-label');
                         const hasOldTheme = /[⚡️⚡]/.test(spanText);
                         const hasOldThemeText = /\b(?:theme|special)\b/i.test(spanText);
                         
@@ -4739,7 +5037,19 @@ Return ONLY valid JSON, no other text.`;
                     // Add theme badge if theme exists
                     let themeBadge = '';
                     if (matchingClass.theme && matchingClass.theme.trim()) {
-                        themeBadge = this.createThemeBadge(matchingClass.theme.trim(), this.currentLocation);
+                        themeBadge = this.createThemeMarkup(matchingClass.theme.trim(), this.currentLocation);
+                    }
+
+                    if (matchingClass.theme && matchingClass.theme.trim() && matchingClass.theme.toLowerCase().trim() !== 'sold out' && this.shouldRenderStaticTheme()) {
+                        this.registerStaticThemeRow({
+                            theme: matchingClass.theme.trim(),
+                            page: this.getPageNumberForSpan($timeSpan),
+                            timeLeft: timeSpanLeft,
+                            rowBottom: timeSpanBottom,
+                            highlightLeft: Math.max(timeSpanLeft - 2, 0),
+                            highlightWidth: 365,
+                            classText: newText
+                        });
                     }
 
                     // Create a new span with the content, preserving the original's attributes
@@ -5050,7 +5360,7 @@ Return ONLY valid JSON, no other text.`;
             
             // Skip time spans, theme badges, and headers
             if (/^\d{1,2}:\d{2}\s*(?:AM|PM)?$/i.test(text)) return;
-            if ($span.hasClass('theme-badge')) return;
+            if ($span.hasClass('theme-badge') || $span.hasClass('theme-static-label')) return;
             if (text.length > 50) return; // Skip long text (likely headers)
             if (text.length < 5) return; // Skip very short text
             
@@ -5076,7 +5386,7 @@ Return ONLY valid JSON, no other text.`;
                         const newText = `${formattedClassForDisplay} - ${formattedTrainer}`;
                         
                         // Preserve any child elements (like theme badges and sold-out badges)
-                        const childBadges = $span.find('.theme-badge, .sold-out-badge').clone();
+                        const childBadges = $span.find('.theme-badge, .theme-static-label, .sold-out-badge').clone();
                         const hasSoldOut = $span.find('.sold-out-badge').length > 0;
                         
                         $span.text(newText);
@@ -5142,7 +5452,7 @@ Return ONLY valid JSON, no other text.`;
                     const isSoldOut = matchingClass.notes && matchingClass.notes.includes('SOLD OUT');
                     
                     if (matchingClass.theme && matchingClass.theme.trim()) {
-                        const themeBadge = this.createThemeBadge(matchingClass.theme.trim(), this.currentLocation);
+                        const themeBadge = this.createThemeMarkup(matchingClass.theme.trim(), this.currentLocation);
                         newText += ` ${themeBadge}`;
                     }
                     
@@ -5214,6 +5524,7 @@ Return ONLY valid JSON, no other text.`;
             }
             this.updateScheduleEntries();
             this.updateDateHeaders();
+            this.renderStaticThemeArtifacts();
             this.save();
             console.log('🎉 Schedule update completed successfully!');
         } catch (error) {
@@ -5672,6 +5983,7 @@ Return ONLY valid JSON, no other text.`;
             }
             this.updateScheduleEntries();
             this.updateDateHeaders();
+            this.renderStaticThemeArtifacts();
             this.save();
             console.log('✅ Schedule HTML updated from Google Sheets Cleaned data!');
             
@@ -6384,8 +6696,9 @@ Return ONLY valid JSON, no other text.`;
                         display: none !important;
                     }
                     
-                    /* Keep theme badges visible and properly styled */
-                    .theme-badge {
+                    /* Keep theme markup visible in exported PDFs */
+                    .theme-badge,
+                    .theme-static-label {
                         display: inline-block !important;
                         visibility: visible !important;
                     }
@@ -6578,6 +6891,7 @@ Return ONLY valid JSON, no other text.`;
         this.updatePositionedSpans();
         this.updateScheduleEntries();
         this.updateDateHeaders();
+        this.renderStaticThemeArtifacts();
         this.save();
         await this.generatePDFNamed('Schedule-Bandra.pdf');
         // Upload Bandra.pdf to Drive
@@ -6612,17 +6926,21 @@ if (isMain) {
     // Check for command-line flags
     const args = process.argv.slice(2);
     const skipEmail = args.includes('--skip-email') || args.includes('--html-only');
+    const staticThemeMode = args.includes('--static');
     
     // Show help if requested
     if (args.includes('--help') || args.includes('-h')) {
         console.log('\n📋 Usage: node updateKempsSchedule.js [options]\n');
         console.log('Options:');
         console.log('  --skip-email, --html-only   Skip email processing, use existing Cleaned sheet data');
+        console.log('  --static                    Render themes as plain static text instead of badges');
         console.log('  --help, -h                  Show this help message\n');
         console.log('Examples:');
         console.log('  node updateKempsSchedule.js                    # Full workflow (email + sheets + HTML)');
         console.log('  node updateKempsSchedule.js --skip-email       # Skip email, update HTML from existing data');
+        console.log('  node updateKempsSchedule.js --static           # Full workflow with static theme text');
         console.log('  npm run update                                 # Full workflow');
+        console.log('  npm run update -- --static                     # Full workflow with static theme text');
         console.log('  npm run update -- --skip-email                 # Skip email via npm\n');
         process.exit(0);
     }
@@ -6639,7 +6957,11 @@ if (isMain) {
         console.log('⏭️  Mode: Skip email processing (using existing Cleaned sheet data)\n');
     }
 
-    const updater = new ScheduleUpdater(htmlPath, outputPath); // No CSV needed
+    console.log(`🎨 Theme render mode: ${staticThemeMode ? 'static text' : 'badge'}`);
+
+    const updater = new ScheduleUpdater(htmlPath, outputPath, 'kemps', {
+        themeRenderMode: staticThemeMode ? 'static' : 'badge'
+    }); // No CSV needed
     
     (async () => {
         try {
