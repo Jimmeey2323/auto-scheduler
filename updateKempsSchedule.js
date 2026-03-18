@@ -12,6 +12,7 @@ import OpenAI from 'openai';
 
 // Enhanced Schedule Mapping System
 import EnhancedScheduleMapper from './enhancedScheduleMapper.js';
+import { BANDRA_STATIC_STRIP_ASSETS } from './bandraStaticThemeAssets.js';
 
 // Google OAuth Configuration
 const GOOGLE_CONFIG = {
@@ -73,6 +74,7 @@ class ScheduleUpdater {
         this.themeRenderMode = options.themeRenderMode === 'static' ? 'static' : 'badge';
         this.staticThemeRows = [];
         this.staticThemeColorMap = new Map();
+        this.staticThemeLegendAssetMap = new Map();
         
         // Initialize enhanced mapping system
         this.enhancedMapper = new EnhancedScheduleMapper();
@@ -3665,6 +3667,7 @@ Return ONLY valid JSON, no other text.`;
         if (!this.$) return;
 
         this.$('.theme-row-highlight, .theme-index-band, .theme-index-entry, .theme-index-title, .theme-static-label').remove();
+        this.$('span').filter((_index, element) => this.$(element).text().trim().toUpperCase() === 'STATIC MAGIC').remove();
     }
 
     /**
@@ -3912,6 +3915,7 @@ Return ONLY valid JSON, no other text.`;
         this.staticThemeRows.push({
             theme: String(rowConfig.theme).trim(),
             page: rowConfig.page,
+            location: rowConfig.location || this.currentLocation,
             timeLeft: rowConfig.timeLeft,
             rowBottom: rowConfig.rowBottom,
             highlightWidth: rowConfig.highlightWidth,
@@ -3930,7 +3934,9 @@ Return ONLY valid JSON, no other text.`;
             '#FFD6A5', '#FFCAD4', '#C7F9CC', '#A9DEF9', '#D0F4DE', '#FFF1A8',
             '#E4C1F9', '#C1FBA4', '#F9C6C9', '#B8E1FF', '#FFD8BE', '#D9ED92'
         ];
+        const bandraLegendAssetOrder = ['395x23', '396x22', '384x23', '412x22'];
         const colorMap = new Map();
+        const legendAssetMap = new Map();
 
         this.staticThemeRows.forEach((row) => {
             const themeKey = row.theme.trim().toUpperCase();
@@ -3942,10 +3948,80 @@ Return ONLY valid JSON, no other text.`;
                     const hue = (nextIndex * 47) % 360;
                     colorMap.set(themeKey, `hsl(${hue}, 85%, 78%)`);
                 }
+
+                if (this.usesBandraStaticThemeGeometry(row.location)) {
+                    const assetKey = bandraLegendAssetOrder[nextIndex % bandraLegendAssetOrder.length];
+                    legendAssetMap.set(themeKey, BANDRA_STATIC_STRIP_ASSETS[assetKey] || null);
+                }
             }
         });
 
         this.staticThemeColorMap = colorMap;
+        this.staticThemeLegendAssetMap = legendAssetMap;
+    }
+
+    /**
+     * Bandra / Supreme HQ use the legacy static-strip layout from the reference export.
+     */
+    usesBandraStaticThemeGeometry(location = '') {
+        const normalized = String(location || '').toLowerCase();
+        return normalized.includes('bandra') || normalized.includes('supreme');
+    }
+
+    /**
+     * Resolve the final geometry for a static theme highlight.
+     * Bandra/Supreme use fixed strip positions that match the legacy export.
+     */
+    resolveStaticThemeHighlightGeometry(row) {
+        const fallbackHeight = row.highlightHeight || 23.2;
+        const fallbackBottom = (row.rowBottom || 0) - fallbackHeight;
+        const geometry = {
+            left: row.highlightLeft,
+            width: row.highlightWidth,
+            height: fallbackHeight,
+            bottom: fallbackBottom
+        };
+
+        if (!this.usesBandraStaticThemeGeometry(row.location)) {
+            return geometry;
+        }
+
+        const timeAnchor = Number(row.timeLeft || row.highlightLeft || 0);
+        const rowBottom = Number(row.rowBottom || 0);
+        const isRightColumn = timeAnchor >= 430;
+        const isLowerSection = rowBottom < 400;
+
+        if (isRightColumn) {
+            geometry.left = isLowerSection ? 475 : 467;
+            geometry.width = isLowerSection ? 396 : 412;
+            geometry.height = 22;
+        } else {
+            geometry.left = 61;
+            geometry.width = isLowerSection ? 395 : 384;
+            geometry.height = 23;
+        }
+
+        // In the reference file the strip sits on the row baseline as a background,
+        // not below the row like a separate block.
+        geometry.bottom = rowBottom - 1;
+
+        return geometry;
+    }
+
+    /**
+     * Return the exact strip asset used by the legacy Bandra export for a given geometry.
+     */
+    getBandraStaticHighlightAsset(geometry) {
+        if (!geometry) return null;
+        const key = `${Math.round(Number(geometry.width || 0))}x${Math.round(Number(geometry.height || 0))}`;
+        return BANDRA_STATIC_STRIP_ASSETS[key] || null;
+    }
+
+    /**
+     * Return the gradient strip to use in the static legend/index for a given theme.
+     */
+    getStaticThemeLegendAsset(themeKey) {
+        return this.staticThemeLegendAssetMap.get(themeKey) || null;
     }
 
     /**
@@ -3994,7 +4070,15 @@ Return ONLY valid JSON, no other text.`;
             const $container = $page.find('.text-container').first();
             if (!$container.length) return;
 
-            const highlightHtml = `<span class="theme-row-highlight" style="position:absolute;left:${row.highlightLeft}px;bottom:${row.rowBottom - row.highlightHeight}px;width:${row.highlightWidth}px;height:${row.highlightHeight}px;background:${color};z-index:1;display:block;"></span>`;
+            const geometry = this.resolveStaticThemeHighlightGeometry(row);
+
+            const exactStripAsset = this.usesBandraStaticThemeGeometry(row.location)
+                ? this.getBandraStaticHighlightAsset(geometry)
+                : null;
+
+            const highlightHtml = exactStripAsset
+                ? `<img class="theme-row-highlight" src="${exactStripAsset}" style="position:absolute;left:${geometry.left}px;bottom:${geometry.bottom}px;width:${geometry.width}px;height:${geometry.height}px;z-index:1;display:block;pointer-events:none;user-select:none;" alt="" />`
+                : `<span class="theme-row-highlight" style="position:absolute;left:${geometry.left}px;bottom:${geometry.bottom}px;width:${geometry.width}px;height:${geometry.height}px;background:${color};z-index:1;display:block;"></span>`;
             $container.append(highlightHtml);
         });
     }
@@ -4028,7 +4112,10 @@ Return ONLY valid JSON, no other text.`;
             const bottom = startBottom - (row * lineGap);
             const bandBottom = bottom - 2;
             const color = this.staticThemeColorMap.get(themeName) || '#FEC95D';
-            const bandHtml = `<span class="theme-index-band" style="position:absolute;left:${bandLeft}px;bottom:${bandBottom}px;width:${bandWidth}px;height:${bandHeight}px;background:${color};z-index:1;display:block;"></span>`;
+            const legendAsset = this.getStaticThemeLegendAsset(themeName);
+            const bandHtml = legendAsset
+                ? `<img class="theme-index-band" src="${legendAsset}" style="position:absolute;left:${bandLeft}px;bottom:${bandBottom}px;width:${bandWidth}px;height:${bandHeight}px;z-index:1;display:block;pointer-events:none;user-select:none;" alt="" />`
+                : `<span class="theme-index-band" style="position:absolute;left:${bandLeft}px;bottom:${bandBottom}px;width:${bandWidth}px;height:${bandHeight}px;background:${color};z-index:1;display:block;"></span>`;
             const entryHtml = `<span class="t v0 s8 theme-index-entry" style="left:${textLeft}px;bottom:${bottom}px;letter-spacing:0.21px;z-index:2;">${themeName}</span>`;
             $container.append(bandHtml);
             $container.append(entryHtml);
@@ -4495,6 +4582,7 @@ Return ONLY valid JSON, no other text.`;
                     this.registerStaticThemeRow({
                         theme,
                         page: dayPage,
+                        location: this.currentLocation,
                         timeLeft: dayLeft,
                         rowBottom: currentBottom,
                         highlightLeft,
@@ -6888,7 +6976,12 @@ Return ONLY valid JSON, no other text.`;
         const bandraImagePath = path.join(__dirname, 'Bandra.png');
         this.replaceBackgroundImage(bandraImagePath);
         
-        this.updatePositionedSpans();
+        if (DYNAMIC_ROW_MODE) {
+            console.log('📊 DYNAMIC_ROW_MODE enabled for Bandra: rebuilding rows from sheet data');
+            this.dynamicUpdatePositionedSpans();
+        } else {
+            this.updatePositionedSpans();
+        }
         this.updateScheduleEntries();
         this.updateDateHeaders();
         this.renderStaticThemeArtifacts();
