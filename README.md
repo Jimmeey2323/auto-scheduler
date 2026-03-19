@@ -86,6 +86,43 @@ node updateKempsSchedule.js --skip-email
 - Making manual adjustments to the Cleaned sheet
 - Faster updates when email data hasn't changed
 
+### Momence dashboard userscript preview
+
+If you want to trigger the static HTML generation directly from the Momence dashboard and preview the generated `Bandra.html` / `Kemps.html` files in-page, use the included local preview bridge plus userscript.
+
+#### 1. Start the local preview bridge
+
+```bash
+npm run preview:bridge
+```
+
+This starts a small local server on `http://127.0.0.1:3210` that can:
+- run `npm run update -- --static` in the background
+- report progress/log output
+- serve the generated `Bandra.html` and `Kemps.html` files to the userscript
+
+#### 2. Install the userscript
+
+Install `momence-dashboard-schedule-preview.user.js` into Tampermonkey (or a compatible userscript manager).
+
+The script runs on:
+
+```text
+https://momence.com/dashboard/1375/*
+```
+
+#### 3. Use it
+
+Open a matching Momence dashboard page and click the floating **Schedule Preview** button.
+
+The userscript will:
+- trigger the local updater in the background
+- open a modal on the current page
+- poll the bridge for run status
+- load the resulting `Kemps.html` and `Bandra.html` files into preview tabs inside the modal
+
+> Why the extra bridge? Browsers intentionally do not let a userscript directly launch local terminal commands or open local files from a secure website. The bridge is the safe local handshake that makes the workflow possible.
+
 ### Help and Options
 
 View all available options:
@@ -109,6 +146,8 @@ node completeScheduleUpdate.js
 ## File Structure
 
 - `Bandra.html` / `Kemps.html` - Schedule template files
+- `momence-dashboard-schedule-preview.user.js` - Userscript that adds a floating preview button to Momence dashboard pages
+- `momenceDashboardPreviewBridge.js` - Local helper server that runs the updater and serves generated HTML previews
 - `updateHTMLOnly.js` - Updates HTML templates with latest data
 - `updateKempsSchedule.js` - Full schedule processing with email
 - `setupGmailAuth.js` - Google OAuth configuration helper

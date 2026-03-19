@@ -4079,7 +4079,10 @@ Return ONLY valid JSON, no other text.`;
      */
     resolveStaticThemeHighlightGeometry(row) {
         const fallbackHeight = row.highlightHeight || 23.2;
-        const fallbackBottom = (row.rowBottom || 0) - fallbackHeight;
+        // rowBottom is tracked as the text baseline for the themed row.
+        // Position the highlight to sit on that same row instead of shifting it
+        // down by a full highlight height, which makes it appear on the next row.
+        const fallbackBottom = (row.rowBottom || 0) - 1;
         const geometry = {
             left: row.highlightLeft,
             width: row.highlightWidth,

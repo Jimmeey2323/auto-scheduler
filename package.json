@@ -8,6 +8,7 @@
     "update": "node updateKempsSchedule.js",
     "update:html-only": "node updateKempsSchedule.js --skip-email",
     "update:skip-email": "node updateKempsSchedule.js --skip-email",
+    "preview:bridge": "node momenceDashboardPreviewBridge.js",
     "reauth": "node reauth.js",
     "test": "echo \"No tests configured\""
   },
