@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": false,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "." }
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/kemps",
+      "destination": "/Kemps.html"
+    },
+    {
+      "source": "/bandra",
+      "destination": "/Bandra.html"
+    }
+  ]
+}

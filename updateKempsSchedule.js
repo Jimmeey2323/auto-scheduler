@@ -1,4 +1,5 @@
 import fs from 'fs';
+import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { parse } from 'csv-parse/sync';
@@ -7,6 +8,7 @@ import beautify from 'js-beautify';
 import puppeteer from 'puppeteer';
 import { google } from 'googleapis';
 import axios from 'axios';
+import open from 'open';
 import { PDFDocument } from 'pdf-lib';
 import 'dotenv/config';
 import OpenAI from 'openai';
@@ -57,6 +59,120 @@ const EMAIL_CONFIG = {
 // Set to true to dynamically add/remove rows based on sheet data
 // Set to false to use the existing update logic (preserves HTML row count)
 const DYNAMIC_ROW_MODE = true;
+const SERVE_TABS_HOST = process.env.SCHEDULE_PREVIEW_HOST || '127.0.0.1';
+const SERVE_TABS_OPEN_DELAY_MS = 250;
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function createPreviewHtmlServer(previewFiles, host = SERVE_TABS_HOST, port = 0) {
+    const previewFileMap = new Map(
+        previewFiles.map(file => [file.routeName, file])
+    );
+
+    const server = http.createServer((req, res) => {
+        const requestUrl = new URL(req.url || '/', `http://${host}`);
+
+        if (requestUrl.pathname === '/') {
+            const linksMarkup = previewFiles.map(file => {
+                const href = `/${encodeURIComponent(file.routeName)}`;
+                return `<li><a href="${href}" target="_blank" rel="noreferrer">${file.label}</a></li>`;
+            }).join('');
+
+            const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Schedule Preview</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 32px;
+      font: 500 16px/1.6 Inter, system-ui, sans-serif;
+      color: #e2e8f0;
+      background: linear-gradient(180deg, #0f172a, #020617);
+    }
+    h1 { margin-top: 0; font-size: 24px; }
+    p { color: #94a3b8; }
+    ul { padding-left: 20px; }
+    a { color: #7dd3fc; }
+  </style>
+</head>
+<body>
+  <h1>Generated schedule previews</h1>
+  <p>The latest HTML outputs are being served locally. Open either file below in its own tab.</p>
+  <ul>${linksMarkup}</ul>
+</body>
+</html>`;
+
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(html);
+            return;
+        }
+
+        const routeName = decodeURIComponent(requestUrl.pathname.replace(/^\//, ''));
+        const previewFile = previewFileMap.get(routeName);
+
+        if (!previewFile) {
+            res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Preview not found.');
+            return;
+        }
+
+        if (!fs.existsSync(previewFile.filePath)) {
+            res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end(`${previewFile.routeName} does not exist yet.`);
+            return;
+        }
+
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        fs.createReadStream(previewFile.filePath).pipe(res);
+    });
+
+    return new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(port, host, () => {
+            server.off('error', reject);
+            resolve(server);
+        });
+    });
+}
+
+async function serveOutputFilesInTabs(previewFiles, options = {}) {
+    const host = options.host || SERVE_TABS_HOST;
+    const port = Number.isInteger(options.port) ? options.port : 0;
+    const server = await createPreviewHtmlServer(previewFiles, host, port);
+    const address = server.address();
+    const resolvedPort = typeof address === 'object' && address ? address.port : port;
+    const baseUrl = `http://${host}:${resolvedPort}`;
+
+    console.log(`\n🌐 Serving generated HTML previews at ${baseUrl}`);
+    console.log('📑 Opening each generated HTML file in a separate browser tab...');
+
+    for (const file of previewFiles) {
+        const previewUrl = `${baseUrl}/${encodeURIComponent(file.routeName)}`;
+        console.log(`   - ${file.label}: ${previewUrl}`);
+        await open(previewUrl, { wait: false, newInstance: false });
+        await sleep(SERVE_TABS_OPEN_DELAY_MS);
+    }
+
+    console.log('🛑 Press Ctrl+C when you are done previewing to stop the local preview server.');
+
+    const closeServer = () => {
+        if (!server.listening) {
+            return;
+        }
+
+        console.log('\n🧹 Shutting down preview server...');
+        server.close(() => process.exit(0));
+    };
+
+    process.once('SIGINT', closeServer);
+    process.once('SIGTERM', closeServer);
+
+    return { server, baseUrl };
+}
 
 /**
  * Advanced Node.js Script to Update Kemps.html with CSV Data
@@ -75,6 +191,7 @@ class ScheduleUpdater {
         this.currentLocation = location.toLowerCase(); // Track current location for theme badge styling
         this.locationName = this.currentLocation.charAt(0).toUpperCase() + this.currentLocation.slice(1); // 'Kemps' or 'Bandra'
         this.themeRenderMode = options.themeRenderMode === 'static' ? 'static' : 'badge';
+        this.skipPdf = options.skipPdf === true; // Skip PDF generation if set (for static deployments)
         this.staticThemeRows = [];
         this.staticThemeColorMap = new Map();
         this.staticThemeLegendAssetMap = new Map();
@@ -6357,13 +6474,21 @@ Return ONLY valid JSON, no other text.`;
             // Add small delay to ensure HTML file is fully written to disk
             await new Promise(resolve => setTimeout(resolve, 1000));
             
-            // Step 2: Generate PDF
-            const pdfPath = await this.generatePDF();
+            // Step 2: Generate PDF (skip if skipPdf flag is set, e.g., for static Vercel deployments)
+            if (this.skipPdf) {
+                console.log('⏭️  Skipping PDF generation (skipPdf mode enabled)');
+            } else {
+                const pdfPath = await this.generatePDF();
+                
+                // Step 3: Upload to Google Drive
+                await this.uploadToGoogleDrive(pdfPath);
+            }
             
-            // Step 3: Upload to Google Drive
-            await this.uploadToGoogleDrive(pdfPath);
-            
-            console.log('\n🎉 Complete! Schedule updated from Google Sheets, PDF generated, and uploaded to Google Drive!');
+            if (this.skipPdf) {
+                console.log('\n🎉 Complete! Schedule HTML updated from Google Sheets!');
+            } else {
+                console.log('\n🎉 Complete! Schedule updated from Google Sheets, PDF generated, and uploaded to Google Drive!');
+            }
         } catch (error) {
             console.error('❌ Error in updateWithPDF:', error.message);
             throw error;
@@ -7272,14 +7397,26 @@ Return ONLY valid JSON, no other text.`;
         this.updateDateHeaders();
         this.renderStaticThemeArtifacts();
         this.save();
-        await this.generatePDFNamed('Schedule-Bandra.pdf');
-        // Upload Bandra.pdf to Drive
-        const bandraPdfPath = path.join(__dirname, 'Schedule-Bandra.pdf');
-        await this.uploadNamedPDF(bandraPdfPath, 'Schedule-Bandra.pdf');
+        
+        // Skip PDF generation if skipPdf flag is set (e.g., for static Vercel deployments)
+        if (this.skipPdf) {
+            console.log('⏭️  Skipping PDF generation for Bandra (skipPdf mode enabled)');
+        } else {
+            await this.generatePDFNamed('Schedule-Bandra.pdf');
+            // Upload Bandra.pdf to Drive
+            const bandraPdfPath = path.join(__dirname, 'Schedule-Bandra.pdf');
+            await this.uploadNamedPDF(bandraPdfPath, 'Schedule-Bandra.pdf');
+        }
+        
         // Restore original context for safety
         this.htmlPath = originalHtmlPath;
         this.outputPath = originalOutputPath;
-        console.log('🎉 Bandra schedule update complete (HTML + Bandra.pdf)');
+        
+        if (this.skipPdf) {
+            console.log('🎉 Bandra schedule update complete (HTML only)');
+        } else {
+            console.log('🎉 Bandra schedule update complete (HTML + Bandra.pdf)');
+        }
     }
 }
 
@@ -7306,6 +7443,8 @@ if (isMain) {
     const args = process.argv.slice(2);
     const skipEmail = args.includes('--skip-email') || args.includes('--html-only');
     const staticThemeMode = args.includes('--static');
+    const skipPdf = args.includes('--skip-pdf');
+    const serveTabs = args.includes('--serve-tabs');
     
     // Show help if requested
     if (args.includes('--help') || args.includes('-h')) {
@@ -7313,13 +7452,16 @@ if (isMain) {
         console.log('Options:');
         console.log('  --skip-email, --html-only   Skip email processing, use existing Cleaned sheet data');
         console.log('  --static                    Render themes as plain static text instead of badges');
+        console.log('  --serve-tabs                Serve generated HTML locally and open each file in its own browser tab');
         console.log('  --help, -h                  Show this help message\n');
         console.log('Examples:');
         console.log('  node updateKempsSchedule.js                    # Full workflow (email + sheets + HTML)');
         console.log('  node updateKempsSchedule.js --skip-email       # Skip email, update HTML from existing data');
         console.log('  node updateKempsSchedule.js --static           # Full workflow with static theme text');
+        console.log('  node updateKempsSchedule.js --serve-tabs       # Generate, serve, and open Kemps/Bandra previews in tabs');
         console.log('  npm run update                                 # Full workflow');
         console.log('  npm run update -- --static                     # Full workflow with static theme text');
+        console.log('  npm run update -- --serve-tabs                 # Full workflow plus local browser preview tabs');
         console.log('  npm run update -- --skip-email                 # Skip email via npm\n');
         process.exit(0);
     }
@@ -7337,9 +7479,13 @@ if (isMain) {
     }
 
     console.log(`🎨 Theme render mode: ${staticThemeMode ? 'static text' : 'badge'}`);
+    if (serveTabs) {
+        console.log('🌐 Preview mode: serve generated HTML and open each file in a separate browser tab');
+    }
 
     const updater = new ScheduleUpdater(htmlPath, outputPath, 'kemps', {
-        themeRenderMode: staticThemeMode ? 'static' : 'badge'
+        themeRenderMode: staticThemeMode ? 'static' : 'badge',
+        skipPdf: skipPdf
     }); // No CSV needed
     
     (async () => {
@@ -7362,6 +7508,21 @@ if (isMain) {
             console.log('   - Kemps.html (updated from Google Sheets)');
             console.log('   - Kemps_Updated.pdf (uploaded to Drive)');
             console.log('   - Bandra.pdf (if applicable)');
+
+            if (serveTabs) {
+                await serveOutputFilesInTabs([
+                    {
+                        label: 'Kemps',
+                        routeName: 'Kemps.html',
+                        filePath: path.join(__dirname, 'Kemps.html')
+                    },
+                    {
+                        label: 'Bandra',
+                        routeName: 'Bandra.html',
+                        filePath: path.join(__dirname, 'Bandra.html')
+                    }
+                ]);
+            }
             
         } catch (error) {
             console.error('Failed to update schedule:', error);

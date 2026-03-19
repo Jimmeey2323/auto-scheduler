@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Momence Schedule Previews</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #020617;
+        --panel: rgba(15, 23, 42, 0.84);
+        --panel-border: rgba(148, 163, 184, 0.18);
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --accent-a: #38bdf8;
+        --accent-b: #a78bfa;
+        --accent-c: #f9a8d4;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font: 500 16px/1.6 Inter, system-ui, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 30%),
+          radial-gradient(circle at top right, rgba(167, 139, 250, 0.14), transparent 28%),
+          linear-gradient(180deg, #0f172a 0%, var(--bg) 55%, #000 100%);
+      }
+
+      main {
+        width: min(1080px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 56px 0 72px;
+      }
+
+      .hero {
+        display: grid;
+        gap: 18px;
+        margin-bottom: 28px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        width: fit-content;
+        border: 1px solid rgba(125, 211, 252, 0.22);
+        border-radius: 999px;
+        padding: 6px 12px;
+        color: #bae6fd;
+        background: rgba(8, 47, 73, 0.45);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(34px, 6vw, 58px);
+        line-height: 1.03;
+        letter-spacing: -0.04em;
+      }
+
+      .subtitle {
+        max-width: 760px;
+        color: var(--muted);
+        font-size: clamp(16px, 2vw, 19px);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 18px;
+        margin: 30px 0 24px;
+      }
+
+      .card {
+        border: 1px solid var(--panel-border);
+        border-radius: 22px;
+        padding: 22px;
+        background: var(--panel);
+        box-shadow: 0 16px 40px rgba(2, 6, 23, 0.26);
+        backdrop-filter: blur(10px);
+      }
+
+      .card h2 {
+        margin: 0 0 8px;
+        font-size: 24px;
+      }
+
+      .card p {
+        margin: 0 0 18px;
+        color: var(--muted);
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      a.button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 10px 16px;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        color: var(--text);
+        text-decoration: none;
+        font-weight: 700;
+        transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+      }
+
+      a.button.primary {
+        border-color: transparent;
+        color: #020617;
+        background: linear-gradient(135deg, var(--accent-a), var(--accent-c));
+        box-shadow: 0 10px 24px rgba(56, 189, 248, 0.24);
+      }
+
+      a.button.secondary {
+        background: rgba(15, 23, 42, 0.72);
+      }
+
+      a.button:hover {
+        transform: translateY(-1px);
+      }
+
+      .notes {
+        border: 1px dashed rgba(148, 163, 184, 0.24);
+        border-radius: 20px;
+        padding: 18px 20px;
+        color: var(--muted);
+        background: rgba(15, 23, 42, 0.42);
+      }
+
+      code {
+        font: 600 0.95em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #e9d5ff;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div class="eyebrow">Momence schedule previews</div>
+        <h1>Generated HTML previews, now with an actual front door.</h1>
+        <div class="subtitle">
+          This Vercel landing page links to the generated static schedule files for both studios.
+          The local preview bridge is still a localhost-only workflow, but the HTML outputs themselves can be served here just fine.
+        </div>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <h2>Kemps</h2>
+          <p>Open the generated `Kemps.html` preview directly, or use the clean route.</p>
+          <div class="actions">
+            <a class="button primary" href="/kemps">Open Kemps</a>
+            <a class="button secondary" href="/Kemps.html">Direct file</a>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2>Bandra</h2>
+          <p>Open the generated `Bandra.html` preview directly, or use the clean route.</p>
+          <div class="actions">
+            <a class="button primary" href="/bandra">Open Bandra</a>
+            <a class="button secondary" href="/Bandra.html">Direct file</a>
+          </div>
+        </article>
+      </section>
+
+      <section class="notes">
+        <strong>Note:</strong> the userscript workflow talks to <code>127.0.0.1:3210</code>, so running background builds from the browser still requires your local bridge server. Vercel is only serving the already-generated HTML files.
+      </section>
+    </main>
+  </body>
+</html>

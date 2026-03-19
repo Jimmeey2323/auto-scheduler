@@ -68,6 +68,16 @@ npm run update
 node updateKempsSchedule.js
 ```
 
+Want the generated HTML previews to pop open in separate browser tabs after the run completes?
+
+```bash
+npm run update -- --serve-tabs
+# or
+node updateKempsSchedule.js --serve-tabs
+```
+
+That flag starts a small local read-only preview server on `127.0.0.1`, opens `Kemps.html` and `Bandra.html` in separate tabs, and keeps the process alive until you stop it with `Ctrl+C`.
+
 ### HTML-Only Update (Skip Email Processing)
 
 Use existing data in the Cleaned sheet to update HTML and PDF without processing emails:
@@ -123,6 +133,24 @@ The userscript will:
 
 > Why the extra bridge? Browsers intentionally do not let a userscript directly launch local terminal commands or open local files from a secure website. The bridge is the safe local handshake that makes the workflow possible.
 
+### Static deployment on Vercel
+
+If you deploy this repository to Vercel, the project now includes:
+
+- `index.html` as the root landing page
+- `vercel.json` rewrites for:
+	- `/kemps` → `/Kemps.html`
+	- `/bandra` → `/Bandra.html`
+
+Direct file URLs also work:
+
+```text
+/Kemps.html
+/Bandra.html
+```
+
+Important: this only serves the generated HTML files. The local preview bridge used by `momence-dashboard-schedule-preview.user.js` still depends on `127.0.0.1` and cannot be replaced by a Vercel deployment as-is.
+
 ### Help and Options
 
 View all available options:
@@ -130,6 +158,12 @@ View all available options:
 ```bash
 node updateKempsSchedule.js --help
 ```
+
+Notable flags:
+
+- `--skip-email` / `--html-only` — regenerate outputs from the existing `Cleaned` sheet data
+- `--static` — render themes in static mode
+- `--serve-tabs` — serve the generated HTML files locally and open one browser tab per file
 
 ### Legacy Scripts
 
