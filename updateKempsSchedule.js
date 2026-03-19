@@ -3658,6 +3658,7 @@ Return ONLY valid JSON, no other text.`;
     resetStaticThemeState() {
         this.staticThemeRows = [];
         this.staticThemeColorMap = new Map();
+        this.staticThemeLegendAssetMap = new Map();
     }
 
     /**
@@ -3667,6 +3668,9 @@ Return ONLY valid JSON, no other text.`;
         if (!this.$) return;
 
         this.$('.theme-row-highlight, .theme-index-band, .theme-index-entry, .theme-index-title, .theme-static-label').remove();
+        if (this.shouldRenderStaticTheme()) {
+            this.$('.theme-badge').remove();
+        }
         this.$('span').filter((_index, element) => this.$(element).text().trim().toUpperCase() === 'STATIC MAGIC').remove();
     }
 
@@ -3934,7 +3938,6 @@ Return ONLY valid JSON, no other text.`;
             '#FFD6A5', '#FFCAD4', '#C7F9CC', '#A9DEF9', '#D0F4DE', '#FFF1A8',
             '#E4C1F9', '#C1FBA4', '#F9C6C9', '#B8E1FF', '#FFD8BE', '#D9ED92'
         ];
-        const bandraLegendAssetOrder = ['395x23', '396x22', '384x23', '412x22'];
         const colorMap = new Map();
         const legendAssetMap = new Map();
 
@@ -3950,8 +3953,9 @@ Return ONLY valid JSON, no other text.`;
                 }
 
                 if (this.usesBandraStaticThemeGeometry(row.location)) {
-                    const assetKey = bandraLegendAssetOrder[nextIndex % bandraLegendAssetOrder.length];
-                    legendAssetMap.set(themeKey, BANDRA_STATIC_STRIP_ASSETS[assetKey] || null);
+                    const highlightGeometry = this.resolveStaticThemeHighlightGeometry(row);
+                    const legendAsset = this.getBandraStaticHighlightAsset(highlightGeometry);
+                    legendAssetMap.set(themeKey, legendAsset);
                 }
             }
         });
@@ -5439,6 +5443,9 @@ Return ONLY valid JSON, no other text.`;
     normalizeAllContentSpans() {
         console.log('🎨 Normalizing all content spans for consistent styling...');
         let normalizedCount = 0;
+        const badgeSelector = this.shouldRenderStaticTheme()
+            ? '.sold-out-badge'
+            : '.theme-badge, .theme-static-label, .sold-out-badge';
         
         // Find all spans that look like class content (contain trainer names or class names)
         this.$('span').each((_, elem) => {
@@ -5474,7 +5481,7 @@ Return ONLY valid JSON, no other text.`;
                         const newText = `${formattedClassForDisplay} - ${formattedTrainer}`;
                         
                         // Preserve any child elements (like theme badges and sold-out badges)
-                        const childBadges = $span.find('.theme-badge, .theme-static-label, .sold-out-badge').clone();
+                        const childBadges = $span.find(badgeSelector).clone();
                         const hasSoldOut = $span.find('.sold-out-badge').length > 0;
                         
                         $span.text(newText);
@@ -5496,6 +5503,10 @@ Return ONLY valid JSON, no other text.`;
                 }
             }
         });
+
+        if (this.shouldRenderStaticTheme()) {
+            this.$('.theme-badge, .theme-static-label').remove();
+        }
         
         console.log(`✅ Normalized ${normalizedCount} content spans`);
     }
@@ -6784,12 +6795,26 @@ Return ONLY valid JSON, no other text.`;
                         display: none !important;
                     }
                     
+                    ${this.shouldRenderStaticTheme() ? `
+                    /* Static mode uses strip overlays and legend bars, not inline badges */
+                    .theme-badge,
+                    .theme-static-label {
+                        display: none !important;
+                        visibility: hidden !important;
+                    }
+                    .theme-row-highlight,
+                    .theme-index-band {
+                        display: block !important;
+                        visibility: visible !important;
+                    }
+                    ` : `
                     /* Keep theme markup visible in exported PDFs */
                     .theme-badge,
                     .theme-static-label {
                         display: inline-block !important;
                         visibility: visible !important;
                     }
+                    `}
                     
                     ${shouldLimitPages ? `
                     /* Hide any page beyond the first 2 pages (only for Kemps) */
