@@ -25,6 +25,7 @@
     "csv-parse": "^5.5.0",
     "dotenv": "^17.2.3",
     "googleapis": "^126.0.1",
+    "js-beautify": "^1.15.4",
     "jsdom": "^27.4.0",
     "open": "^11.0.0",
     "openai": "^4.104.0",

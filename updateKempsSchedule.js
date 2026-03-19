@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { parse } from 'csv-parse/sync';
 import cheerio from 'cheerio';
+import beautify from 'js-beautify';
 import puppeteer from 'puppeteer';
 import { google } from 'googleapis';
 import axios from 'axios';
@@ -13,6 +14,8 @@ import OpenAI from 'openai';
 // Enhanced Schedule Mapping System
 import EnhancedScheduleMapper from './enhancedScheduleMapper.js';
 import { BANDRA_STATIC_STRIP_ASSETS } from './bandraStaticThemeAssets.js';
+
+const beautifyHtml = typeof beautify?.html === 'function' ? beautify.html : (html => html);
 
 // Google OAuth Configuration
 const GOOGLE_CONFIG = {
@@ -75,6 +78,9 @@ class ScheduleUpdater {
         this.staticThemeRows = [];
         this.staticThemeColorMap = new Map();
         this.staticThemeLegendAssetMap = new Map();
+        this.googleAccessTokenCache = null;
+        this.googleAccessTokenExpiry = 0;
+        this.googleAccessTokenPromise = null;
         
         // Initialize enhanced mapping system
         this.enhancedMapper = new EnhancedScheduleMapper();
@@ -3910,6 +3916,100 @@ Return ONLY valid JSON, no other text.`;
     }
 
     /**
+     * Bandra static exports render the theme inline inside the row text.
+     */
+    shouldInlineStaticTheme(location = '') {
+        return this.shouldRenderStaticTheme() && this.usesBandraStaticThemeGeometry(location || this.currentLocation);
+    }
+
+    /**
+     * Format the inline theme suffix appended to the trainer name.
+     */
+    formatInlineStaticThemeSuffix(theme, location = '') {
+        if (!this.shouldInlineStaticTheme(location)) return '';
+
+        const cleanTheme = String(theme || '').trim();
+        if (!cleanTheme || cleanTheme.toLowerCase() === 'sold out') return '';
+
+        return ` [${cleanTheme.toUpperCase()}]`;
+    }
+
+    /**
+     * Inline theme markup for Bandra static rows uses slightly smaller, tighter type.
+     */
+    createInlineStaticThemeMarkup(theme, location = '') {
+        const textSuffix = this.formatInlineStaticThemeSuffix(theme, location);
+        if (!textSuffix) return '';
+
+        return ` <span class="theme-inline-label" style="font-size:0.88em;letter-spacing:-0.32px;font-weight:500;display:inline-block;white-space:nowrap;">${textSuffix.trim()}</span>`;
+    }
+
+    /**
+     * Themed Bandra static rows use white text on the highlight strip.
+     */
+    shouldUseWhiteStaticThemeText(theme, location = '') {
+        const cleanTheme = String(theme || '').trim();
+        return this.shouldInlineStaticTheme(location) && !!cleanTheme && cleanTheme.toLowerCase() !== 'sold out';
+    }
+
+    /**
+     * Rough text-width estimate so static highlight strips can cover inline theme text.
+     */
+    estimateStaticTextWidth(text = '') {
+        let width = 0;
+        let insideThemeBrackets = false;
+
+        for (const char of String(text)) {
+            let charWidth;
+
+            if (/[WMQGO0-9@#%&]/.test(char)) {
+                charWidth = 9.2;
+            } else if (/[A-Z]/.test(char)) {
+                charWidth = 7.6;
+            } else if (/[a-z]/.test(char)) {
+                charWidth = 6.6;
+            } else if (/[\[\](){}]/.test(char)) {
+                charWidth = 4.8;
+            } else if (/[-–]/.test(char)) {
+                charWidth = 4.6;
+            } else if (/\s/.test(char)) {
+                charWidth = 3.7;
+            } else {
+                charWidth = 6;
+            }
+
+            if (char === '[') insideThemeBrackets = true;
+
+            if (insideThemeBrackets) {
+                charWidth *= 0.88;
+            }
+
+            width += charWidth;
+
+            if (char === ']') insideThemeBrackets = false;
+        }
+
+        return Math.ceil(width);
+    }
+
+    /**
+     * Compute the highlight width needed to cover the full visible row text.
+     */
+    getDesiredStaticHighlightWidth({ highlightLeft = 0, textLeft = 0, text = '', baseWidth = 365 } = {}) {
+        const prefixWidth = Math.max(0, Number(textLeft || 0) - Number(highlightLeft || 0));
+        const textWidth = this.estimateStaticTextWidth(text);
+        return Math.max(baseWidth, Math.ceil(prefixWidth + textWidth + 18));
+    }
+
+    /**
+     * Bandra static highlights should sit a touch tighter than the previous full-width version.
+     */
+    getReducedInlineStaticHighlightWidth(width = 0, location = '') {
+        if (!this.shouldInlineStaticTheme(location)) return Math.round(Number(width || 0));
+        return Math.round(Number(width || 0) * 0.95);
+    }
+
+    /**
      * Register a themed row so static mode can render a background bar and theme index entry later.
      */
     registerStaticThemeRow(rowConfig) {
@@ -3921,6 +4021,7 @@ Return ONLY valid JSON, no other text.`;
             page: rowConfig.page,
             location: rowConfig.location || this.currentLocation,
             timeLeft: rowConfig.timeLeft,
+            textLeft: rowConfig.textLeft,
             rowBottom: rowConfig.rowBottom,
             highlightWidth: rowConfig.highlightWidth,
             highlightHeight: rowConfig.highlightHeight || 23.2,
@@ -3994,6 +4095,10 @@ Return ONLY valid JSON, no other text.`;
         const rowBottom = Number(row.rowBottom || 0);
         const isRightColumn = timeAnchor >= 430;
         const isLowerSection = rowBottom < 400;
+        const desiredWidth = Number(row.highlightWidth || 0);
+        const maxWidth = isRightColumn ? 412 : ((Number(row.page || 1) >= 2) ? 420 : 412);
+        const hasInlineThemeLabel = this.shouldInlineStaticTheme(row.location) && /\[[^\]]+\]/.test(row.classText || '');
+        const reducedMaxWidth = this.getReducedInlineStaticHighlightWidth(maxWidth, row.location);
 
         if (isRightColumn) {
             geometry.left = isLowerSection ? 475 : 467;
@@ -4003,6 +4108,14 @@ Return ONLY valid JSON, no other text.`;
             geometry.left = 61;
             geometry.width = isLowerSection ? 395 : 384;
             geometry.height = 23;
+        }
+
+        if (desiredWidth > 0) {
+            geometry.width = Math.min(reducedMaxWidth, Math.max(geometry.width, this.getReducedInlineStaticHighlightWidth(desiredWidth, row.location)));
+        }
+
+        if (hasInlineThemeLabel) {
+            geometry.width = reducedMaxWidth;
         }
 
         // In the reference file the strip sits on the row baseline as a background,
@@ -4017,8 +4130,26 @@ Return ONLY valid JSON, no other text.`;
      */
     getBandraStaticHighlightAsset(geometry) {
         if (!geometry) return null;
-        const key = `${Math.round(Number(geometry.width || 0))}x${Math.round(Number(geometry.height || 0))}`;
-        return BANDRA_STATIC_STRIP_ASSETS[key] || null;
+        const width = Math.round(Number(geometry.width || 0));
+        const height = Math.round(Number(geometry.height || 0));
+        const key = `${width}x${height}`;
+        if (BANDRA_STATIC_STRIP_ASSETS[key]) {
+            return BANDRA_STATIC_STRIP_ASSETS[key];
+        }
+
+        if (height === 23) {
+            return width >= 395
+                ? (BANDRA_STATIC_STRIP_ASSETS['395x23'] || BANDRA_STATIC_STRIP_ASSETS['384x23'] || null)
+                : (BANDRA_STATIC_STRIP_ASSETS['384x23'] || BANDRA_STATIC_STRIP_ASSETS['395x23'] || null);
+        }
+
+        if (height === 22) {
+            return width >= 412
+                ? (BANDRA_STATIC_STRIP_ASSETS['412x22'] || BANDRA_STATIC_STRIP_ASSETS['396x22'] || null)
+                : (BANDRA_STATIC_STRIP_ASSETS['396x22'] || BANDRA_STATIC_STRIP_ASSETS['412x22'] || null);
+        }
+
+        return null;
     }
 
     /**
@@ -4059,8 +4190,12 @@ Return ONLY valid JSON, no other text.`;
 
         this.buildStaticThemeColorMap();
         this.renderStaticThemeHighlights(validRows);
-        this.renderStaticThemeIndex(validRows);
-        console.log(`✅ Rendered ${validRows.length} static theme highlights and ${this.staticThemeColorMap.size} index entries`);
+        const shouldRenderIndex = validRows.some((row) => !this.usesBandraStaticThemeGeometry(row.location));
+        if (shouldRenderIndex) {
+            this.renderStaticThemeIndex(validRows);
+        }
+        const renderedIndexCount = shouldRenderIndex ? this.staticThemeColorMap.size : 0;
+        console.log(`✅ Rendered ${validRows.length} static theme highlights and ${renderedIndexCount} index entries`);
     }
 
     /**
@@ -4539,6 +4674,9 @@ Return ONLY valid JSON, no other text.`;
                 const className = this.formatClassName(this.normalizeClassName(classData.class)).replace(/^STUDIO\s+/i, '');
                 const trainerName = this.getTrainerFirstName(classData.trainer).toUpperCase();
                 const theme = classData.theme || '';
+                const inlineThemeSuffix = this.formatInlineStaticThemeSuffix(theme, this.currentLocation);
+                const inlineThemeMarkup = this.createInlineStaticThemeMarkup(theme, this.currentLocation);
+                const useWhiteThemedText = this.shouldUseWhiteStaticThemeText(theme, this.currentLocation);
                 
                 // Debug logging to verify data
                 console.log(`  📝 [${dayName}] ${time} - Class: "${className}", Trainer: "${trainerName}", Theme: "${theme}"`);
@@ -4552,18 +4690,22 @@ Return ONLY valid JSON, no other text.`;
 
 
                 // Create time span with normalized time
-                const timeSpanHtml = `<span class="t s9" style="left:${dayLeft}px;bottom:${currentBottom}px;">${time}</span>`;
+                const timeSpanHtml = `<span class="t s9" style="left:${dayLeft}px;bottom:${currentBottom}px;color:${useWhiteThemedText ? '#ffffff' : '#1a1a1a'};">${time}</span>`;
                 
                 // Create class/trainer span
                 let classText = className;
                 if (trainerName) {
                     classText += ` - ${trainerName}`;
                 }
+                classText += inlineThemeSuffix;
+                const classTextHtml = inlineThemeMarkup
+                    ? `${className}${trainerName ? ` - ${trainerName}` : ''}${inlineThemeMarkup}`
+                    : classText;
                 
                 // Build badge HTML
                 let badgeHtml = '';
                 // Only add theme badge if it's not "Sold Out" (sold out badge added separately)
-                if (theme && theme.trim() && theme.toLowerCase().trim() !== 'sold out') {
+                if (theme && theme.trim() && theme.toLowerCase().trim() !== 'sold out' && !this.shouldInlineStaticTheme(this.currentLocation)) {
                     badgeHtml += this.createThemeMarkup(theme.trim(), this.currentLocation);
                 }
                 if (isSoldOut) {
@@ -4572,7 +4714,14 @@ Return ONLY valid JSON, no other text.`;
 
                 const classLeft = dayLeft + TIME_CLASS_OFFSET;
                 const highlightLeft = Math.max(dayLeft - 2, 0);
-                const highlightWidth = 365;
+                const highlightWidth = this.shouldInlineStaticTheme(this.currentLocation)
+                    ? this.getDesiredStaticHighlightWidth({
+                        highlightLeft,
+                        textLeft: classLeft,
+                        text: classText,
+                        baseWidth: 365
+                    })
+                    : 365;
                 // Create red strikethrough line for sold out classes that covers the time and class name (but not the badge)
                 let strikethroughHtml = '';
                 if (isSoldOut) {
@@ -4580,7 +4729,7 @@ Return ONLY valid JSON, no other text.`;
                     strikethroughHtml = `<span class="sold-out-line" style="position: absolute; left:${dayLeft}px; bottom:${currentBottom + 8}px; width: 220px; height: 2px; background-color: #dc143c; z-index: 10;"></span>`;
                 }
                 
-                const classSpanHtml = `<span class="t v0 s5" style="left:${classLeft}px;bottom:${currentBottom}px;font-family:Montserrat,sans-serif;font-weight:400;color:#1a1a1a;">${classText}${badgeHtml}</span>`;
+                const classSpanHtml = `<span class="t v0 s5" style="left:${classLeft}px;bottom:${currentBottom}px;font-family:Montserrat,sans-serif;font-weight:400;color:${useWhiteThemedText ? '#ffffff' : '#1a1a1a'};">${classTextHtml}${badgeHtml}</span>`;
 
                 if (theme && theme.trim() && theme.toLowerCase().trim() !== 'sold out' && this.shouldRenderStaticTheme()) {
                     this.registerStaticThemeRow({
@@ -4588,6 +4737,7 @@ Return ONLY valid JSON, no other text.`;
                         page: dayPage,
                         location: this.currentLocation,
                         timeLeft: dayLeft,
+                        textLeft: classLeft,
                         rowBottom: currentBottom,
                         highlightLeft,
                         highlightWidth,
@@ -5119,16 +5269,21 @@ Return ONLY valid JSON, no other text.`;
                     
                     // Check if this is a sold-out/hosted class
                     const isSoldOut = matchingClass.notes && matchingClass.notes.includes('SOLD OUT');
+                    const useWhiteThemedText = this.shouldUseWhiteStaticThemeText(matchingClass.theme, this.currentLocation);
+                    $timeSpan.css('color', useWhiteThemedText ? '#ffffff' : '#1a1a1a');
                     
                     
                     let newText = classDisplay;
                     if (trainerDisplay) {
                         newText += ` - ${trainerDisplay}`;
                     }
+                    const inlineThemeSuffix = this.formatInlineStaticThemeSuffix(matchingClass.theme, this.currentLocation);
+                    const inlineThemeMarkup = this.createInlineStaticThemeMarkup(matchingClass.theme, this.currentLocation);
+                    newText += inlineThemeSuffix;
 
                     // Add theme badge if theme exists
                     let themeBadge = '';
-                    if (matchingClass.theme && matchingClass.theme.trim()) {
+                    if (matchingClass.theme && matchingClass.theme.trim() && !this.shouldInlineStaticTheme(this.currentLocation)) {
                         themeBadge = this.createThemeMarkup(matchingClass.theme.trim(), this.currentLocation);
                     }
 
@@ -5136,16 +5291,25 @@ Return ONLY valid JSON, no other text.`;
                         this.registerStaticThemeRow({
                             theme: matchingClass.theme.trim(),
                             page: this.getPageNumberForSpan($timeSpan),
+                            location: this.currentLocation,
                             timeLeft: timeSpanLeft,
+                            textLeft: timeSpanLeft + 86,
                             rowBottom: timeSpanBottom,
                             highlightLeft: Math.max(timeSpanLeft - 2, 0),
-                            highlightWidth: 365,
+                            highlightWidth: this.shouldInlineStaticTheme(this.currentLocation)
+                                ? this.getDesiredStaticHighlightWidth({
+                                    highlightLeft: Math.max(timeSpanLeft - 2, 0),
+                                    textLeft: timeSpanLeft + 86,
+                                    text: newText,
+                                    baseWidth: 365
+                                })
+                                : 365,
                             classText: newText
                         });
                     }
 
                     // Create a new span with the content, preserving the original's attributes
-                    const newSpan = firstContentSpan.clone().text(newText);
+                    const newSpan = firstContentSpan.clone().text(trainerDisplay ? `${classDisplay} - ${trainerDisplay}` : classDisplay);
                     
                     // Remove old sold-out styling
                     newSpan.removeClass('sold-out');
@@ -5164,6 +5328,11 @@ Return ONLY valid JSON, no other text.`;
                         badgeHTML += ' <span class="sold-out-badge">SOLD OUT</span>';
                     }
                     
+                    if (inlineThemeMarkup) {
+                        const currentHTML = newSpan.html();
+                        newSpan.html(currentHTML + inlineThemeMarkup);
+                    }
+
                     if (badgeHTML) {
                         // Append badges to the span
                         const currentHTML = newSpan.html();
@@ -5173,7 +5342,7 @@ Return ONLY valid JSON, no other text.`;
                     // Apply consistent Montserrat font with regular weight for all days
                     newSpan.css('font-family', 'Montserrat, sans-serif');
                     newSpan.css('font-weight', '400');
-                    newSpan.css('color', '#1a1a1a');
+                    newSpan.css('color', useWhiteThemedText ? '#ffffff' : '#1a1a1a');
                     newSpan.css('letter-spacing', '-0.1px');
                     newSpan.css('font-style', 'normal');
                     newSpan.css('text-transform', 'none');
@@ -5546,11 +5715,13 @@ Return ONLY valid JSON, no other text.`;
 
                     // Update text content with theme badge and sold-out status
                     let newText = `${time} – ${classDisplay} – ${trainerDisplay}`;
+                    const inlineThemeSuffix = this.formatInlineStaticThemeSuffix(matchingClass.theme, this.currentLocation);
+                    newText += inlineThemeSuffix;
                     
                     // Check if this is a sold-out/hosted class
                     const isSoldOut = matchingClass.notes && matchingClass.notes.includes('SOLD OUT');
                     
-                    if (matchingClass.theme && matchingClass.theme.trim()) {
+                    if (matchingClass.theme && matchingClass.theme.trim() && !this.shouldInlineStaticTheme(this.currentLocation)) {
                         const themeBadge = this.createThemeMarkup(matchingClass.theme.trim(), this.currentLocation);
                         newText += ` ${themeBadge}`;
                     }
@@ -5672,9 +5843,33 @@ Return ONLY valid JSON, no other text.`;
 
     save() {
         console.log('\n💾 Saving updated HTML...');
-        const updatedHTML = this.$.html();
+        const updatedHTML = this.formatOutputHtml(this.$.html());
         fs.writeFileSync(this.outputPath, updatedHTML, 'utf-8');
         console.log(`✅ Saved to: ${this.outputPath}`);
+    }
+
+    formatOutputHtml(html) {
+        return beautifyHtml(String(html || ''), {
+            indent_size: 2,
+            indent_char: ' ',
+            preserve_newlines: true,
+            max_preserve_newlines: 2,
+            end_with_newline: true,
+            wrap_line_length: 0,
+            wrap_attributes: 'auto',
+            wrap_attributes_indent_size: 2,
+            unformatted: [
+                'code', 'pre', 'em', 'strong', 'span', 'i', 'b', 'u', 'svg', 'path', 'image',
+                'defs', 'clipPath', 'style', 'script', 'textarea'
+            ],
+            content_unformatted: ['script', 'style'],
+            inline: [
+                'a', 'abbr', 'acronym', 'b', 'bdo', 'big', 'br', 'button', 'cite', 'code', 'dfn',
+                'em', 'i', 'img', 'input', 'kbd', 'label', 'map', 'object', 'output', 'q', 'samp',
+                'script', 'select', 'small', 'span', 'strong', 'sub', 'sup', 'textarea', 'time',
+                'tt', 'var'
+            ]
+        });
     }
 
     /**
@@ -5699,20 +5894,83 @@ Return ONLY valid JSON, no other text.`;
      * Get Google OAuth access token
      */
     async getAccessToken() {
-        console.log('\n🔐 Getting Google OAuth access token...');
-        try {
-            const response = await axios.post(GOOGLE_CONFIG.TOKEN_URL, {
-                client_id: GOOGLE_CONFIG.CLIENT_ID,
-                client_secret: GOOGLE_CONFIG.CLIENT_SECRET,
-                refresh_token: GOOGLE_CONFIG.REFRESH_TOKEN,
-                grant_type: 'refresh_token'
-            });
-            console.log('✅ Access token obtained');
-            return response.data.access_token;
-        } catch (error) {
-            console.error('❌ Error getting access token:', error.response?.data || error.message);
-            throw error;
+        const now = Date.now();
+        if (this.googleAccessTokenCache && now < this.googleAccessTokenExpiry) {
+            return this.googleAccessTokenCache;
         }
+
+        if (this.googleAccessTokenPromise) {
+            return this.googleAccessTokenPromise;
+        }
+
+        console.log('\n🔐 Getting Google OAuth access token...');
+        this.googleAccessTokenPromise = (async () => {
+            const maxAttempts = 3;
+            const retryDelayMs = 1500;
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    const response = await axios.post(GOOGLE_CONFIG.TOKEN_URL, {
+                        client_id: GOOGLE_CONFIG.CLIENT_ID,
+                        client_secret: GOOGLE_CONFIG.CLIENT_SECRET,
+                        refresh_token: GOOGLE_CONFIG.REFRESH_TOKEN,
+                        grant_type: 'refresh_token'
+                    }, {
+                        timeout: 15000
+                    });
+
+                    const accessToken = response.data.access_token;
+                    const expiresInSeconds = Number(response.data.expires_in || 3600);
+                    this.googleAccessTokenCache = accessToken;
+                    this.googleAccessTokenExpiry = Date.now() + Math.max(0, expiresInSeconds - 60) * 1000;
+                    console.log('✅ Access token obtained');
+                    return accessToken;
+                } catch (error) {
+                    const isRetryable = this.isRetryableGoogleTokenError(error);
+                    const errorDetails = error.response?.data || error.message;
+
+                    if (!isRetryable || attempt === maxAttempts) {
+                        console.error('❌ Error getting access token:', errorDetails);
+                        throw error;
+                    }
+
+                    console.warn(`⚠️  Access token request failed (attempt ${attempt}/${maxAttempts}) — retrying in ${retryDelayMs * attempt}ms...`, errorDetails);
+                    await this.sleep(retryDelayMs * attempt);
+                }
+            }
+
+            throw new Error('Failed to obtain Google OAuth access token after retries');
+        })();
+
+        try {
+            return await this.googleAccessTokenPromise;
+        } finally {
+            this.googleAccessTokenPromise = null;
+        }
+    }
+
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    isRetryableGoogleTokenError(error) {
+        if (!error || error.response) return false;
+
+        const retryableCodes = new Set([
+            'ETIMEDOUT',
+            'ECONNABORTED',
+            'ECONNRESET',
+            'ENOTFOUND',
+            'EAI_AGAIN'
+        ]);
+
+        const codesToCheck = [
+            error.code,
+            error.cause?.code,
+            ...(Array.isArray(error.cause?.errors) ? error.cause.errors.map(innerError => innerError?.code) : [])
+        ].filter(Boolean);
+
+        return codesToCheck.some(code => retryableCodes.has(code));
     }
 
     /**
