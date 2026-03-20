@@ -3007,8 +3007,10 @@ Return ONLY valid JSON, no other text.`;
         if (!name) return false;
         const val = name.toString().trim().toLowerCase();
         // Invalid class names - classes from these should be skipped as they come from trainer/notes fields
+        // Fixed: Use word boundary matching instead of substring matching to avoid false positives
         const invalid = ['smita', 'anandita', 'cover', 'replacement', 'sakshi', 'parekh', 'taarika', 'host'];
-        if (invalid.some(i => val.includes(i))) return false;
+        const words = val.split(/\s+/);
+        if (invalid.some(invalidWord => words.includes(invalidWord))) return false;
         if (/^\d+$/.test(val)) return false;
         if (val.split(' ').length === 1 && val.length < 3) return false;
         return true;
