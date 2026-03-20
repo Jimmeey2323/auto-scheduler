@@ -3,6 +3,7 @@ import http from 'http';
 import path from 'path';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
+import puppeteer from 'puppeteer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -173,6 +174,59 @@ function startUpdateRun() {
   return { started: true };
 }
 
+async function generatePDFFromHTML(fileKey) {
+  const fileName = `${fileKey.charAt(0).toUpperCase() + fileKey.slice(1)}.html`;
+  const htmlPath = path.join(__dirname, fileName);
+  
+  if (!fs.existsSync(htmlPath)) {
+    throw new Error(`HTML file ${fileName} does not exist`);
+  }
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+
+  try {
+    const page = await browser.newPage();
+    
+    // Read HTML content and serve it locally  
+    const htmlContent = fs.readFileSync(htmlPath, 'utf8');
+    await page.setContent(htmlContent);
+    
+    // Wait for content to load
+    await page.waitForTimeout(1000);
+    
+    // Generate PDF with schedule-appropriate settings
+    const pdf = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: {
+        top: '0.5in',
+        bottom: '0.5in',
+        left: '0.5in',
+        right: '0.5in'
+      }
+    });
+
+    const pdfFileName = `${fileKey}-schedule-${Date.now()}.pdf`;
+    const pdfPath = path.join(__dirname, 'temp', pdfFileName);
+    
+    // Ensure temp directory exists
+    const tempDir = path.dirname(pdfPath);
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    
+    fs.writeFileSync(pdfPath, pdf);
+    log(`Generated PDF: ${pdfFileName}`);
+    
+    return pdfFileName;
+  } finally {
+    await browser.close();
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || `${HOST}:${PORT}`}`);
 
@@ -186,7 +240,7 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       message: 'Momence schedule preview bridge is running.',
       command: state.command,
-      endpoints: ['/status', '/run', '/html/Kemps.html', '/html/Bandra.html']
+      endpoints: ['/status', '/run', '/html/Kemps.html', '/html/Bandra.html', '/generate-pdf', '/pdf/{filename}']
     });
     return;
   }
@@ -230,6 +284,71 @@ const server = http.createServer(async (req, res) => {
     }
 
     writeText(res, 200, fs.readFileSync(filePath, 'utf8'), 'text/html; charset=utf-8');
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/generate-pdf') {
+    try {
+      const body = await readBody(req);
+      const fileKey = body.file;
+
+      if (!fileKey || (fileKey !== 'kemps' && fileKey !== 'bandra')) {
+        writeJson(res, 400, { 
+          ok: false, 
+          error: 'Invalid file key. Must be "kemps" or "bandra".' 
+        });
+        return;
+      }
+
+      log(`Generating PDF for ${fileKey}...`);
+      const pdfFileName = await generatePDFFromHTML(fileKey);
+      
+      writeJson(res, 200, { 
+        success: true, 
+        pdfPath: pdfFileName,
+        message: 'PDF generated successfully' 
+      });
+    } catch (error) {
+      log(`PDF generation failed: ${error.message}`);
+      writeJson(res, 500, { 
+        success: false, 
+        error: error.message 
+      });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname.startsWith('/pdf/')) {
+    const pdfFileName = decodeURIComponent(url.pathname.replace('/pdf/', ''));
+    const pdfPath = path.join(__dirname, 'temp', pdfFileName);
+
+    if (!fs.existsSync(pdfPath)) {
+      writeJson(res, 404, { ok: false, error: 'PDF file not found.' });
+      return;
+    }
+
+    // Send PDF file with appropriate headers for download
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${pdfFileName}"`,
+      'Access-Control-Allow-Origin': '*'
+    });
+    
+    const pdfContent = fs.readFileSync(pdfPath);
+    res.end(pdfContent);
+    
+    // Clean up old PDF files after serving
+    setTimeout(() => {
+      try {
+        if (fs.existsSync(pdfPath)) {
+          fs.unlinkSync(pdfPath);
+          log(`Cleaned up PDF file: ${pdfFileName}`);
+        }
+      } catch (err) {
+        log(`Failed to cleanup PDF file: ${err.message}`);
+      }
+    }, 60000); // Delete after 1 minute
+    
     return;
   }
 

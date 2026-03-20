@@ -203,24 +203,83 @@
 
       .momence-sp-file-list {
         display: grid;
-        gap: 10px;
+        gap: 12px;
       }
 
       .momence-sp-file-card {
+        border: 1px solid rgba(148, 163, 184, 0.2);
         border-radius: 14px;
-        padding: 12px 14px;
-        background: rgba(15, 23, 42, 0.78);
-        border: 1px solid rgba(148, 163, 184, 0.14);
+        padding: 14px;
+        background: rgba(15, 23, 42, 0.8);
+        backdrop-filter: blur(8px);
+        transition: all 0.2s ease;
+      }
+
+      .momence-sp-file-card:hover {
+        background: rgba(15, 23, 42, 0.95);
+        border-color: rgba(148, 163, 184, 0.3);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
       }
 
       .momence-sp-file-name {
-        font: 700 13px/1.3 Inter, system-ui, sans-serif;
+        font: 700 14px/1.3 Inter, system-ui, sans-serif;
+        color: #f8fafc;
+        margin-bottom: 8px;
       }
 
       .momence-sp-file-meta {
-        margin-top: 4px;
-        font: 500 11px/1.45 Inter, system-ui, sans-serif;
+        font: 500 11px/1.4 Inter, system-ui, sans-serif;
         color: #94a3b8;
+        margin-bottom: 4px;
+      }
+
+      .momence-sp-file-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+        flex-wrap: wrap;
+      }
+
+      .momence-sp-file-btn {
+        padding: 8px 12px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 8px;
+        background: rgba(30, 41, 59, 0.7);
+        color: #e2e8f0;
+        font: 600 11px/1 Inter, system-ui, sans-serif;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .momence-sp-file-btn:hover {
+        background: rgba(30, 41, 59, 1);
+        color: #f8fafc;
+        border-color: rgba(148, 163, 184, 0.4);
+        transform: translateY(-1px);
+      }
+
+      .momence-sp-file-btn.view {
+        background: linear-gradient(135deg, #0ea5e9, #3b82f6);
+        border-color: transparent;
+        color: #fff;
+      }
+
+      .momence-sp-file-btn.view:hover {
+        background: linear-gradient(135deg, #0284c7, #2563eb);
+      }
+
+      .momence-sp-file-btn.download {
+        background: linear-gradient(135deg, #10b981, #059669);
+        border-color: transparent;
+        color: #fff;
+      }
+
+      .momence-sp-file-btn.download:hover {
+        background: linear-gradient(135deg, #059669, #047857);
       }
 
       #momence-schedule-log {
@@ -276,7 +335,7 @@
         height: 100%;
         border: 1px solid rgba(148, 163, 184, 0.16);
         border-radius: 0 18px 18px 18px;
-        background: #fff;
+        background: #020617;
       }
 
       #momence-schedule-empty-state {
@@ -435,9 +494,19 @@
     elements.files.innerHTML = entries.map(file => `
       <div class="momence-sp-file-card">
         <div class="momence-sp-file-name">${escapeHtml(file.name)}</div>
-        <div class="momence-sp-file-meta">${file.exists ? 'Available' : 'Not generated yet'}</div>
+        <div class="momence-sp-file-meta">Status: ${file.exists ? '✅ Available' : '⏳ Not generated yet'}</div>
         <div class="momence-sp-file-meta">Updated: ${escapeHtml(file.updatedAt ? new Date(file.updatedAt).toLocaleString() : '—')}</div>
         <div class="momence-sp-file-meta">Size: ${escapeHtml(file.exists ? `${Math.round(file.size / 1024)} KB` : '0 KB')}</div>
+        ${file.exists ? `
+        <div class="momence-sp-file-actions">
+          <button class="momence-sp-file-btn view" onclick="viewFile('${file.name.replace('.html', '').toLowerCase()}')">
+            👁️ View
+          </button>
+          <button class="momence-sp-file-btn download" onclick="downloadPDF('${file.name.replace('.html', '').toLowerCase()}')">
+            📄 Download PDF
+          </button>
+        </div>
+        ` : ''}
       </div>
     `).join('');
   }
@@ -549,6 +618,61 @@
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#39;');
   }
+
+  // Global functions accessible to inline onclick handlers
+  window.viewFile = function(fileKey) {
+    activeTab = fileKey;
+    renderTabs();
+    renderPreviewFrame();
+  };
+
+  window.downloadPDF = async function(fileKey) {
+    try {
+      // Show loading state
+      const button = event.target;
+      const originalText = button.textContent;
+      button.textContent = '⏳ Generating...';
+      button.disabled = true;
+
+      // Request PDF generation from the bridge
+      const response = await requestJson('POST', '/generate-pdf', { file: fileKey });
+      
+      if (response.success && response.pdfPath) {
+        // Download the generated PDF
+        const pdfBlob = await fetch(`${BRIDGE_BASE_URL}/pdf/${encodeURIComponent(response.pdfPath)}`).then(r => r.blob());
+        
+        // Create download link
+        const url = URL.createObjectURL(pdfBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${fileKey}-schedule.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        button.textContent = '✅ Downloaded!';
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.disabled = false;
+        }, 2000);
+      } else {
+        throw new Error(response.error || 'PDF generation failed');
+      }
+    } catch (error) {
+      console.error('PDF download error:', error);
+      // Reset button state
+      const button = event.target;
+      button.textContent = '❌ Failed';
+      button.disabled = false;
+      setTimeout(() => {
+        button.textContent = '📄 Download PDF';
+      }, 3000);
+      
+      // Show error message
+      renderLogs(null, `PDF download failed: ${error.message}\n\nThe bridge server may need to support PDF generation.`);
+    }
+  };
 
   createUi();
 })();
