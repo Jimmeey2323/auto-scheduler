@@ -198,6 +198,8 @@ class ScheduleUpdater {
         this.googleAccessTokenCache = null;
         this.googleAccessTokenExpiry = 0;
         this.googleAccessTokenPromise = null;
+        this.currentScheduleSubject = '';
+        this.currentScheduleWeek = null;
         
         // Initialize enhanced mapping system
         this.enhancedMapper = new EnhancedScheduleMapper();
@@ -2009,6 +2011,8 @@ Return ONLY valid JSON, no other text.`;
             
             // Store emailInfo for use in cleaning process
             this.currentEmailInfo = emailInfo;
+            this.currentScheduleSubject = emailInfo?.subject || '';
+            this.currentScheduleWeek = this.resolveScheduleWeekReference(this.currentScheduleSubject);
             
             // Apply AI-detected changes if available
             if (emailInfo.changes && emailInfo.changes.length > 0 && emailInfo.aiParsed) {
@@ -2748,29 +2752,10 @@ Return ONLY valid JSON, no other text.`;
         var targetDayIndex = daysOrder.indexOf(dayName);
         
         if (targetDayIndex === -1) return new Date().toLocaleDateString('en-GB');
-        
-        // Try to extract week dates from email subject first
-        var monday;
-        if (emailSubject) {
-            var weekFromSubject = this.extractWeekFromEmailSubject(emailSubject);
-            if (weekFromSubject && weekFromSubject.weekFound) {
-                // Use the start date from email subject as Monday
-                monday = new Date(weekFromSubject.startDate);
-                console.log('📅 Using Monday from email subject: ' + monday.toDateString());
-            }
-        }
-        
-        // If no email subject dates found, calculate from current date
-        if (!monday) {
-            var today = new Date();
-            var currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
-            
-            // Calculate Monday of current week (start of work week)
-            monday = new Date(today);
-            var daysFromMonday = currentDay === 0 ? -6 : (1 - currentDay);
-            monday.setDate(today.getDate() + daysFromMonday);
-            console.log('📅 Using calculated Monday: ' + monday.toDateString());
-        }
+
+        var weekReference = this.resolveScheduleWeekReference(emailSubject);
+        var monday = new Date(weekReference.monday);
+        console.log('📅 Using Monday for schedule week: ' + monday.toDateString());
         
         // Calculate target day from Monday
         var targetDate = new Date(monday);
@@ -2785,6 +2770,76 @@ Return ONLY valid JSON, no other text.`;
         var year = targetDate.getFullYear();
         
         return day + '-' + month + '-' + year;
+    }
+
+    /**
+     * Resolve the Monday/Sunday boundaries for the active schedule week.
+     * Priority:
+     * 1. Explicit email subject passed to the method
+     * 2. Current run's stored email subject
+     * 3. Previously cached schedule week
+     * 4. Current calendar week
+     */
+    resolveScheduleWeekReference(emailSubject) {
+        var subjectToUse = emailSubject || this.currentScheduleSubject || this.currentEmailInfo?.subject || '';
+
+        if (subjectToUse && this.currentScheduleWeek?.subject === subjectToUse && this.currentScheduleWeek?.monday) {
+            return {
+                ...this.currentScheduleWeek,
+                monday: new Date(this.currentScheduleWeek.monday),
+                sunday: new Date(this.currentScheduleWeek.sunday)
+            };
+        }
+
+        if (subjectToUse) {
+            var parsedWeek = this.extractWeekFromEmailSubject(subjectToUse);
+            if (parsedWeek && parsedWeek.weekFound) {
+                var mondayFromSubject = new Date(parsedWeek.startDate);
+                mondayFromSubject.setHours(0, 0, 0, 0);
+
+                var sundayFromSubject = new Date(mondayFromSubject);
+                sundayFromSubject.setDate(mondayFromSubject.getDate() + 6);
+
+                var resolvedFromSubject = {
+                    source: 'email-subject',
+                    subject: subjectToUse,
+                    monday: mondayFromSubject,
+                    sunday: sundayFromSubject
+                };
+
+                this.currentScheduleSubject = subjectToUse;
+                this.currentScheduleWeek = resolvedFromSubject;
+                return resolvedFromSubject;
+            }
+        }
+
+        if (this.currentScheduleWeek?.monday) {
+            return {
+                ...this.currentScheduleWeek,
+                monday: new Date(this.currentScheduleWeek.monday),
+                sunday: new Date(this.currentScheduleWeek.sunday)
+            };
+        }
+
+        var today = new Date();
+        var currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        var monday = new Date(today);
+        var daysFromMonday = currentDay === 0 ? -6 : (1 - currentDay);
+        monday.setDate(today.getDate() + daysFromMonday);
+        monday.setHours(0, 0, 0, 0);
+
+        var sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+
+        var fallbackWeek = {
+            source: 'current-week',
+            subject: '',
+            monday,
+            sunday
+        };
+
+        this.currentScheduleWeek = fallbackWeek;
+        return fallbackWeek;
     }
 
     /**
