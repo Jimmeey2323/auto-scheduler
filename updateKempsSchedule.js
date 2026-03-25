@@ -2848,9 +2848,42 @@ Return ONLY valid JSON, no other text.`;
      */
     extractWeekFromEmailSubject(emailSubject) {
         if (!emailSubject) return null;
+
+        const getMonthIndex = (monthName) => {
+            if (!monthName) return -1;
+            const normalized = monthName.toLowerCase().trim();
+            const monthMap = {
+                jan: 0,
+                january: 0,
+                feb: 1,
+                february: 1,
+                mar: 2,
+                march: 2,
+                apr: 3,
+                april: 3,
+                may: 4,
+                jun: 5,
+                june: 5,
+                jul: 6,
+                july: 6,
+                aug: 7,
+                august: 7,
+                sep: 8,
+                sept: 8,
+                september: 8,
+                oct: 9,
+                october: 9,
+                nov: 10,
+                november: 10,
+                dec: 11,
+                december: 11
+            };
+
+            return monthMap[normalized] ?? -1;
+        };
         
-        // Pattern for "9 -15th Feb'26" format
-        var sameMonthPattern = /(\d{1,2})\s*-\s*(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3})\s*'(\d{2})/;
+        // Pattern for "9 -15th Feb'26", "23 - 29th Mar'26", or "9th - 15th February'26"
+        var sameMonthPattern = /(\d{1,2})(?:st|nd|rd|th)?\s*-\s*(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\s*'(\d{2})/i;
         var sameMonthMatch = emailSubject.match(sameMonthPattern);
         
         if (sameMonthMatch) {
@@ -2861,10 +2894,7 @@ Return ONLY valid JSON, no other text.`;
             
             console.log('📅 Extracted week from subject: ' + startDay + '-' + endDay + ' ' + month + ' ' + year);
             
-            // Convert month abbreviation to number
-            var monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            var monthIndex = monthNames.indexOf(month);
+            var monthIndex = getMonthIndex(month);
             
             if (monthIndex === -1) return null;
             
@@ -2878,8 +2908,8 @@ Return ONLY valid JSON, no other text.`;
             };
         }
         
-        // Pattern for "29 Nov - 5th Dec '25" format (cross-month)
-        var crossMonthPattern = /(\d{1,2})\s+([A-Za-z]{3})\s*-\s*(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3})\s*'(\d{2})/;
+        // Pattern for "29 Nov - 5th Dec '25" or "30th Mar - 5th April'26" format (cross-month)
+        var crossMonthPattern = /(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\s*-\s*(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\s*'(\d{2})/i;
         var crossMonthMatch = emailSubject.match(crossMonthPattern);
         
         if (crossMonthMatch) {
@@ -2891,11 +2921,8 @@ Return ONLY valid JSON, no other text.`;
             
             console.log('📅 Extracted cross-month week: ' + startDay + ' ' + startMonth + ' - ' + endDay + ' ' + endMonth + ' ' + year);
             
-            // Convert month abbreviations to numbers
-            var monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            var startMonthIndex = monthNames.indexOf(startMonth);
-            var endMonthIndex = monthNames.indexOf(endMonth);
+            var startMonthIndex = getMonthIndex(startMonth);
+            var endMonthIndex = getMonthIndex(endMonth);
             
             if (startMonthIndex === -1 || endMonthIndex === -1) return null;
             
