@@ -4194,6 +4194,17 @@ Return ONLY valid JSON, no other text.`;
     }
 
     /**
+     * Estimate the sold-out strike width so it covers time + class + trainer text
+     * and stops just before the SOLD OUT badge begins.
+     */
+    getSoldOutLineWidth({ dayLeft = 0, classLeft = 0, classText = '', maxWidth = 365 } = {}) {
+        const prefixWidth = Math.max(0, Number(classLeft || 0) - Number(dayLeft || 0));
+        const textWidth = this.estimateStaticTextWidth(classText || '');
+            const desiredWidth = Math.ceil(prefixWidth + (textWidth * 1.06) + 16);
+            return Math.max(150, Math.min(Number(maxWidth || 365), desiredWidth));
+    }
+
+    /**
      * Compute the highlight width needed to cover the full visible row text.
      */
     getDesiredStaticHighlightWidth({ highlightLeft = 0, textLeft = 0, text = '', baseWidth = 365 } = {}) {
@@ -4929,8 +4940,13 @@ Return ONLY valid JSON, no other text.`;
                 // Create red strikethrough line for sold out classes that covers the time and class name (but not the badge)
                 let strikethroughHtml = '';
                 if (isSoldOut) {
-                    // Line width: covers from time to just before the badge (approximately 220px)
-                    strikethroughHtml = `<span class="sold-out-line" style="position: absolute; left:${dayLeft}px; bottom:${currentBottom + 8}px; width: 220px; height: 2px; background-color: #dc143c; z-index: 10;"></span>`;
+                    const soldOutLineWidth = this.getSoldOutLineWidth({
+                        dayLeft,
+                        classLeft,
+                        classText,
+                        maxWidth: highlightWidth
+                    });
+                    strikethroughHtml = `<span class="sold-out-line" style="position: absolute; left:${dayLeft}px; bottom:${currentBottom + 8}px; width: ${soldOutLineWidth}px; height: 2px; background-color: #dc143c; z-index: 10; pointer-events: none;"></span>`;
                 }
                 
                 const classSpanHtml = `<span class="t v0 s5" style="left:${classLeft}px;bottom:${currentBottom}px;font-family:Montserrat,sans-serif;font-weight:400;color:${useWhiteThemedText ? '#ffffff' : '#1a1a1a'};">${classTextHtml}${badgeHtml}</span>`;
@@ -4966,7 +4982,7 @@ Return ONLY valid JSON, no other text.`;
                 this.$(lastInsertedElement).after(classSpan);
                 lastInsertedElement = classSpan[0];
 
-                totalAdded += 2;
+                totalAdded += isSoldOut ? 3 : 2;
 
                 // Move to next row
                 currentBottom -= ROW_HEIGHT;
@@ -5666,7 +5682,8 @@ Return ONLY valid JSON, no other text.`;
             console.log(`    Removed ${lineCleanupDupCount} duplicate sold-out-line elements`);
             lineCleanupCount += lineCleanupDupCount;
         }
-        
+
+        const seenSoldOutLineKeys = new Set();
         this.$('span.sold-out-line').each((_, elem) => {
             const $line = this.$(elem);
             console.log(`  Checking line: ${$line.attr('style')}`);
@@ -5679,10 +5696,19 @@ Return ONLY valid JSON, no other text.`;
             if (day && time) {
                 const key = `${day}-${this.normalizeTime(time)}`;
                 console.log(`  Checking key "${key}" in currentSoldOutClasses:`, currentSoldOutClasses.has(key));
+                if (seenSoldOutLineKeys.has(key)) {
+                    console.log(`    Removing duplicate sold-out line for: ${day} ${time}`);
+                    $line.remove();
+                    lineCleanupCount++;
+                    return;
+                }
+
                 if (!currentSoldOutClasses.has(key)) {
                     console.log(`    Removing sold-out line from: ${day} ${time}`);
                     $line.remove();
                     lineCleanupCount++;
+                } else {
+                    seenSoldOutLineKeys.add(key);
                 }
             } else {
                 // If we can't determine day/time, remove the line to be safe
@@ -5702,17 +5728,12 @@ Return ONLY valid JSON, no other text.`;
         const style = $span.attr('style') || '';
         const leftMatch = style.match(/left:\s*(\d+\.?\d*)px/);
         if (!leftMatch) return null;
-        
+
         const left = parseFloat(leftMatch[1]);
-        
-        // Determine day based on column position (approximate values)
-        if (left < 150) return 'Monday';
-        else if (left < 250) return 'Tuesday';
-        else if (left < 350) return 'Wednesday'; 
-        else if (left < 450) return 'Thursday';
-        else if (left < 550) return 'Friday';
-        else if (left < 650) return 'Saturday';
-        else return 'Sunday';
+        const bottom = this.extractBottomFromSpan($span);
+        const page = this.getPageNumberForSpan($span);
+
+        return this.resolveDayFromLayoutPosition(left, bottom, page);
     }
     
     /**
@@ -5722,17 +5743,56 @@ Return ONLY valid JSON, no other text.`;
         const style = $line.attr('style') || '';
         const leftMatch = style.match(/left:\s*(\d+\.?\d*)px/);
         if (!leftMatch) return null;
-        
+
         const left = parseFloat(leftMatch[1]);
-        
-        // Use same logic as span position
-        if (left < 150) return 'Monday';
-        else if (left < 250) return 'Tuesday';
-        else if (left < 350) return 'Wednesday'; 
-        else if (left < 450) return 'Thursday';
-        else if (left < 550) return 'Friday';
-        else if (left < 650) return 'Saturday';
-        else return 'Sunday';
+        const bottom = this.extractBottomFromSpan($line);
+        const page = this.getPageNumberForSpan($line);
+
+        return this.resolveDayFromLayoutPosition(left, bottom, page);
+    }
+
+    /**
+     * Resolve a day name using the actual day headers on the current HTML page.
+     */
+    resolveDayFromLayoutPosition(left, bottom, page) {
+        if (typeof left !== 'number' || Number.isNaN(left)) return null;
+
+        const dayHeaderPattern = /^(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)\s*$/i;
+        let bestMatch = null;
+        let bestDistance = Infinity;
+
+        this.$('span').each((_, elem) => {
+            const $header = this.$(elem);
+            const text = $header.text().trim();
+            if (!dayHeaderPattern.test(text)) return;
+
+            const headerPage = this.getPageNumberForSpan($header);
+            if (headerPage !== page) return;
+
+            const headerStyle = $header.attr('style') || '';
+            const leftMatch = headerStyle.match(/left:\s*(\d+\.?\d*)px/);
+            const bottomMatch = headerStyle.match(/bottom:\s*(\d+\.?\d*)px/);
+            if (!leftMatch || !bottomMatch) return;
+
+            const headerLeft = parseFloat(leftMatch[1]);
+            const headerBottom = parseFloat(bottomMatch[1]);
+            const leftDiff = Math.abs(headerLeft - left);
+
+            if (leftDiff > 110) return;
+            if (typeof bottom === 'number' && !Number.isNaN(bottom) && headerBottom < bottom) return;
+
+            const verticalDistance = typeof bottom === 'number' && !Number.isNaN(bottom)
+                ? Math.abs(headerBottom - bottom)
+                : 0;
+            const weightedDistance = verticalDistance + (leftDiff * 0.25);
+
+            if (weightedDistance < bestDistance) {
+                bestDistance = weightedDistance;
+                bestMatch = text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+            }
+        });
+
+        return bestMatch;
     }
     
     /**
@@ -5742,6 +5802,11 @@ Return ONLY valid JSON, no other text.`;
         // Look for time spans near this class span
         const spanBottom = this.extractBottomFromSpan($span);
         if (spanBottom === null) return null;
+
+        const style = $span.attr('style') || '';
+        const leftMatch = style.match(/left:\s*(\d+\.?\d*)px/);
+        const spanLeft = leftMatch ? parseFloat(leftMatch[1]) : null;
+        const spanPage = this.getPageNumberForSpan($span);
         
         // Find time span with similar bottom position (within 5px tolerance)
         let bestMatch = null;
@@ -5753,6 +5818,18 @@ Return ONLY valid JSON, no other text.`;
             
             // Check if this looks like a time
             if (/^\d{1,2}:\d{2}\s*(?:AM|PM)?$/i.test(text)) {
+                const timePage = this.getPageNumberForSpan($timeSpan);
+                if (timePage !== spanPage) return;
+
+                if (spanLeft !== null) {
+                    const timeStyle = $timeSpan.attr('style') || '';
+                    const timeLeftMatch = timeStyle.match(/left:\s*(\d+\.?\d*)px/);
+                    if (timeLeftMatch) {
+                        const timeLeft = parseFloat(timeLeftMatch[1]);
+                        if (Math.abs(timeLeft - spanLeft) > 110) return;
+                    }
+                }
+
                 const timeBottom = this.extractBottomFromSpan($timeSpan);
                 if (timeBottom !== null) {
                     const distance = Math.abs(spanBottom - timeBottom);
@@ -5773,6 +5850,11 @@ Return ONLY valid JSON, no other text.`;
     extractTimeFromLinePosition($line) {
         const lineBottom = this.extractBottomFromSpan($line);
         if (lineBottom === null) return null;
+
+        const style = $line.attr('style') || '';
+        const leftMatch = style.match(/left:\s*(\d+\.?\d*)px/);
+        const lineLeft = leftMatch ? parseFloat(leftMatch[1]) : null;
+        const linePage = this.getPageNumberForSpan($line);
         
         // Find time span with similar bottom position (the line should be slightly above the text)
         let bestMatch = null;
@@ -5784,6 +5866,18 @@ Return ONLY valid JSON, no other text.`;
             
             // Check if this looks like a time
             if (/^\d{1,2}:\d{2}\s*(?:AM|PM)?$/i.test(text)) {
+                const timePage = this.getPageNumberForSpan($timeSpan);
+                if (timePage !== linePage) return;
+
+                if (lineLeft !== null) {
+                    const timeStyle = $timeSpan.attr('style') || '';
+                    const timeLeftMatch = timeStyle.match(/left:\s*(\d+\.?\d*)px/);
+                    if (timeLeftMatch) {
+                        const timeLeft = parseFloat(timeLeftMatch[1]);
+                        if (Math.abs(timeLeft - lineLeft) > 50) return;
+                    }
+                }
+
                 const timeBottom = this.extractBottomFromSpan($timeSpan);
                 if (timeBottom !== null) {
                     // Line should be about 8px above the text (based on creation logic)
