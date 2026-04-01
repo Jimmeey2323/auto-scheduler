@@ -734,57 +734,13 @@ Return ONLY valid JSON, no other text.`;
             console.log('✅ Found email:', emailData.subject);
             console.log('📧 Email body preview:', emailData.body.substring(0, 200) + '...');
             
-            // Step 2: Extract Google Sheets link from email
-            console.log('🔗 Step 2: Extracting Google Sheets link...');
-            
-            // Search through all messages to find the most recent or corrected link
-            let sheetsLink = null;
-            let correctedLink = null;
-            
-            if (emailData.allMessages && emailData.allMessages.length > 0) {
-                console.log('🔍 Searching all messages for Google Sheets links...');
-                
-                // First pass: look for corrected/updated links
-                for (let i = 0; i < emailData.allMessages.length; i++) {
-                    const message = emailData.allMessages[i];
-                    console.log(`\n📧 Checking message ${i + 1} for correction keywords:`);
-                    
-                    // Check if this message contains correction keywords
-                    const hasCorrection = /sorry|correct|updated?|new|latest/i.test(message.substring(0, 300));
-                    if (hasCorrection) {
-                        console.log('✅ Found correction keywords in message');
-                        const link = this.extractSheetsLink(message);
-                        if (link && !correctedLink) {
-                            correctedLink = link;
-                            console.log(`🔧 Found CORRECTED link: ${correctedLink}`);
-                        }
-                    }
-                }
-                
-                // Second pass: if no corrected link found, get the first link from most recent message that has one
-                if (!correctedLink) {
-                    console.log('🔍 No corrected link found, searching for any link (most recent first)...');
-                    for (let i = emailData.allMessages.length - 1; i >= 0; i--) {
-                        console.log(`\n📧 Searching message ${i + 1} of ${emailData.allMessages.length}:`);
-                        sheetsLink = this.extractSheetsLink(emailData.allMessages[i]);
-                        if (sheetsLink) {
-                            console.log(`✅ Found Google Sheets link in message ${i + 1}`);
-                            break;
-                        }
-                    }
-                }
-                
-                // Use corrected link if found, otherwise use the most recent one
-                sheetsLink = correctedLink || sheetsLink;
-                
-            } else {
-                // Fallback: try latest message
-                console.log('🔍 Searching latest message only...');
-                sheetsLink = this.extractSheetsLink(emailData.body);
-            }
+            // Step 2: Extract Google Sheets link from the selected newest email only.
+            // Do not scan older thread messages, otherwise previous-week links can win.
+            console.log('🔗 Step 2: Extracting Google Sheets link from the newest selected email only...');
+            const sheetsLink = this.extractSheetsLink(emailData.body);
             
             if (!sheetsLink) {
-                console.log('⚠️  No Google Sheets link found in email or thread');
+                console.log('⚠️  No Google Sheets link found in the newest selected email');
                 console.log('🔍 Latest message preview:', emailData.body.substring(0, 500));
                 return;
             }
@@ -805,21 +761,13 @@ Return ONLY valid JSON, no other text.`;
             // Step 4: Determine if this is first email (initial schedule) or subsequent email (changes)
             console.log('🎨 Step 4: Parsing email for covers and themes...');
             
-            // Check for spreadsheet link in latest message first, then in thread
-            let isFirstEmail = this.hasSpreadsheetLink(emailData.body);
-            if (!isFirstEmail && emailData.allMessages && emailData.allMessages.length > 0) {
-                // Check all messages in thread for spreadsheet link
-                for (const message of emailData.allMessages) {
-                    if (this.hasSpreadsheetLink(message)) {
-                        isFirstEmail = true;
-                        break;
-                    }
-                }
-            }
+            // Determine email type based only on the selected newest email.
+            const isFirstEmail = this.hasSpreadsheetLink(emailData.body);
             
             console.log(`📧 Email type: ${isFirstEmail ? 'FIRST EMAIL (using spreadsheet covers only)' : 'SUBSEQUENT EMAIL (using email body covers)'}`);
-            
-            const emailInfo = await this.parseEmailForScheduleInfo(emailData.allMessages, isFirstEmail);
+
+            const emailMessagesToParse = emailData.body ? [emailData.body] : [];
+            const emailInfo = await this.parseEmailForScheduleInfo(emailMessagesToParse, isFirstEmail);
             
             // Add the email subject to emailInfo for date calculation
             emailInfo.subject = emailData.subject;
