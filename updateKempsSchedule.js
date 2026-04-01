@@ -746,6 +746,7 @@ Return ONLY valid JSON, no other text.`;
             }
 
             console.log('✅ Found Google Sheets link:', sheetsLink);
+            this.currentSourceSheetsLink = sheetsLink;
 
             // Step 3: Extract schedule data from the linked spreadsheet
             console.log('📋 Step 3: Extracting data from linked spreadsheet...');
@@ -926,28 +927,56 @@ Return ONLY valid JSON, no other text.`;
                     });
                     const subject = detail.data.payload.headers.find(h => h.name === 'Subject')?.value;
                     const date = detail.data.payload.headers.find(h => h.name === 'Date')?.value;
+                    const parsedWeek = this.extractWeekFromEmailSubject(subject);
                     return {
                         id: msg.id,
                         subject: subject,
                         date: date,
-                        internalDate: detail.data.internalDate
+                        internalDate: detail.data.internalDate,
+                        parsedWeek,
+                        scheduleWeekEndTs: parsedWeek?.endDate ? new Date(parsedWeek.endDate).getTime() : Number.NEGATIVE_INFINITY,
+                        isMumbaiSchedule: /mumbai\s+schedule/i.test(subject || '')
                     };
                 })
             );
 
-            console.log('📬 Candidate schedule emails sorted by received time:');
-            messagesWithDates
+            const preferredMessages = messagesWithDates.filter(message => message.isMumbaiSchedule);
+            const candidateMessages = preferredMessages.length > 0 ? preferredMessages : messagesWithDates;
+
+            if (preferredMessages.length > 0) {
+                console.log(`📬 Narrowed candidates to ${preferredMessages.length} Mumbai schedule email(s)`);
+            } else {
+                console.log('⚠️  No explicit "Mumbai schedule" subjects found, falling back to all Schedule matches');
+            }
+
+            console.log('📬 Candidate schedule emails sorted by schedule week, then received time:');
+            candidateMessages
                 .slice()
-                .sort((a, b) => parseInt(b.internalDate) - parseInt(a.internalDate))
+                .sort((a, b) => {
+                    if (b.scheduleWeekEndTs !== a.scheduleWeekEndTs) {
+                        return b.scheduleWeekEndTs - a.scheduleWeekEndTs;
+                    }
+
+                    return parseInt(b.internalDate) - parseInt(a.internalDate);
+                })
                 .forEach((message, index) => {
-                    console.log(`   ${index + 1}. ${message.date || 'Unknown date'} | ${message.subject}`);
+                    const parsedRange = message.parsedWeek?.weekFound
+                        ? `${new Date(message.parsedWeek.startDate).toDateString()} → ${new Date(message.parsedWeek.endDate).toDateString()}`
+                        : 'no subject week parsed';
+                    console.log(`   ${index + 1}. ${message.date || 'Unknown date'} | ${message.subject} | ${parsedRange}`);
                 });
 
-            // Always use the most recent matching email.
-            messagesWithDates.sort((a, b) => parseInt(b.internalDate) - parseInt(a.internalDate));
+            // Prefer the email for the latest schedule week; break ties by received time.
+            candidateMessages.sort((a, b) => {
+                if (b.scheduleWeekEndTs !== a.scheduleWeekEndTs) {
+                    return b.scheduleWeekEndTs - a.scheduleWeekEndTs;
+                }
+
+                return parseInt(b.internalDate) - parseInt(a.internalDate);
+            });
             
-            const mostRecentMessage = messagesWithDates[0];
-            console.log(`\n✅ Using newest matching email: "${mostRecentMessage.subject}"\n`);
+            const mostRecentMessage = candidateMessages[0];
+            console.log(`\n✅ Using selected schedule email: "${mostRecentMessage.subject}"\n`);
             
             // Get the most recent email (already sorted by date)
             const messageId = mostRecentMessage.id;
@@ -983,7 +1012,9 @@ Return ONLY valid JSON, no other text.`;
                 body: latestMessage,
                 allMessages: allMessages,
                 subject: emailSubject,
-                date: emailDate
+                date: emailDate,
+                id: messageId,
+                threadId: threadId
             };
 
         } catch (error) {
@@ -2077,17 +2108,22 @@ Return ONLY valid JSON, no other text.`;
         console.log('📥 Fetching raw data from linked sheet...');
         
         try {
-            // Get the linked sheet ID from the last processed email
-            const emailData = await this.findLatestScheduleEmail();
-            if (!emailData) {
-                console.log('❌ No email data to extract sheet ID from');
-                return null;
-            }
-
-            const sheetsLink = this.extractSheetsLink(emailData.body);
+            // Reuse the exact sheet link chosen earlier in this run.
+            let sheetsLink = this.currentSourceSheetsLink;
             if (!sheetsLink) {
-                console.log('❌ No sheets link found in email');
-                return null;
+                console.log('⚠️  No cached source sheet link found, falling back to the latest selected email body');
+
+                const emailData = await this.findLatestScheduleEmail();
+                if (!emailData) {
+                    console.log('❌ No email data to extract sheet ID from');
+                    return null;
+                }
+
+                sheetsLink = this.extractSheetsLink(emailData.body);
+                if (!sheetsLink) {
+                    console.log('❌ No sheets link found in email');
+                    return null;
+                }
             }
 
             const spreadsheetId = this.extractSpreadsheetId(sheetsLink);
@@ -2788,6 +2824,11 @@ Return ONLY valid JSON, no other text.`;
     extractWeekFromEmailSubject(emailSubject) {
         if (!emailSubject) return null;
 
+        emailSubject = String(emailSubject)
+            .replace(/[–—]/g, '-')
+            .replace(/^\s*(?:re|fwd?)\s*:\s*/i, '')
+            .trim();
+
         const getMonthIndex = (monthName) => {
             if (!monthName) return -1;
             const normalized = monthName.toLowerCase().trim();
@@ -2843,6 +2884,29 @@ Return ONLY valid JSON, no other text.`;
             return {
                 startDate: startDate,
                 endDate: new Date(year, monthIndex, endDay),
+                weekFound: true
+            };
+        }
+
+        // Pattern for month-first format like
+        // "Mumbai schedule for April 6-12 '26" or "April 6 - 12th '26"
+        var monthFirstPattern = /([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?\s*-\s*(\d{1,2})(?:st|nd|rd|th)?\s*'?(\d{2})/i;
+        var monthFirstMatch = emailSubject.match(monthFirstPattern);
+
+        if (monthFirstMatch) {
+            var monthFirstMonth = monthFirstMatch[1];
+            var monthFirstStartDay = parseInt(monthFirstMatch[2]);
+            var monthFirstEndDay = parseInt(monthFirstMatch[3]);
+            var monthFirstYear = 2000 + parseInt(monthFirstMatch[4]);
+
+            console.log('📅 Extracted month-first week from subject: ' + monthFirstMonth + ' ' + monthFirstStartDay + '-' + monthFirstEndDay + ' ' + monthFirstYear);
+
+            var monthFirstMonthIndex = getMonthIndex(monthFirstMonth);
+            if (monthFirstMonthIndex === -1) return null;
+
+            return {
+                startDate: new Date(monthFirstYear, monthFirstMonthIndex, monthFirstStartDay),
+                endDate: new Date(monthFirstYear, monthFirstMonthIndex, monthFirstEndDay),
                 weekFound: true
             };
         }
