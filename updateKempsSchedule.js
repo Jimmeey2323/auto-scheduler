@@ -936,7 +936,7 @@ Return ONLY valid JSON, no other text.`;
     }
 
     async findLatestScheduleEmail() {
-        console.log(`🔍 Searching for most recent schedule email...`);
+        console.log(`🔍 Searching for the most recent schedule email...`);
         
         try {
             const accessToken = await this.getAccessToken();
@@ -948,7 +948,8 @@ Return ONLY valid JSON, no other text.`;
 
             const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
             
-            // Search for the most recent schedule email from approved senders
+            // Search for schedule emails from approved senders.
+            // We always use the newest matching email received.
             const senderQuery = EMAIL_CONFIG.SENDER_EMAILS.map(e => `from:${e}`).join(' OR ');
             const searchQuery = `(${senderQuery}) subject:Schedule newer_than:21d`;
             console.log(`🔍 Email search query: ${searchQuery}`);
@@ -965,11 +966,8 @@ Return ONLY valid JSON, no other text.`;
             }
 
             console.log(`📬 Found ${response.data.messages.length} potential emails`);
-            
-            const currentWeekPattern = this.getCurrentWeekSubjectPattern();
-            console.log(`📅 Current week subject pattern: ${currentWeekPattern}`);
 
-            // Get full metadata for all messages to sort by date and subject relevance
+            // Get metadata so we can deterministically pick the newest matching email.
             const messagesWithDates = await Promise.all(
                 response.data.messages.map(async (msg) => {
                     const detail = await gmail.users.messages.get({
@@ -984,31 +982,24 @@ Return ONLY valid JSON, no other text.`;
                         id: msg.id,
                         subject: subject,
                         date: date,
-                        internalDate: detail.data.internalDate,
-                        score: this.scoreScheduleEmailSubject(subject)
+                        internalDate: detail.data.internalDate
                     };
                 })
             );
 
-            console.log('📬 Candidate schedule emails ranked by subject relevance:');
+            console.log('📬 Candidate schedule emails sorted by received time:');
             messagesWithDates
                 .slice()
-                .sort((a, b) => {
-                    if (b.score !== a.score) return b.score - a.score;
-                    return parseInt(b.internalDate) - parseInt(a.internalDate);
-                })
+                .sort((a, b) => parseInt(b.internalDate) - parseInt(a.internalDate))
                 .forEach((message, index) => {
-                    console.log(`   ${index + 1}. score=${message.score} | ${message.subject}`);
+                    console.log(`   ${index + 1}. ${message.date || 'Unknown date'} | ${message.subject}`);
                 });
 
-            // Sort by relevance first, then by recency.
-            messagesWithDates.sort((a, b) => {
-                if (b.score !== a.score) return b.score - a.score;
-                return parseInt(b.internalDate) - parseInt(a.internalDate);
-            });
+            // Always use the most recent matching email.
+            messagesWithDates.sort((a, b) => parseInt(b.internalDate) - parseInt(a.internalDate));
             
             const mostRecentMessage = messagesWithDates[0];
-            console.log(`\n✅ Using most recent: "${mostRecentMessage.subject}"\n`);
+            console.log(`\n✅ Using newest matching email: "${mostRecentMessage.subject}"\n`);
             
             // Get the most recent email (already sorted by date)
             const messageId = mostRecentMessage.id;
