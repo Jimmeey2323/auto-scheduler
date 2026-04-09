@@ -81,6 +81,57 @@
             position: relative;
             background-color: white;
         }
+        @media print {
+            @page {
+                size: A4 portrait;
+                margin: 0;
+            }
+
+            :root {
+                --print-page-scale: 0.87245;
+                --print-page-width: 793px;
+                --print-page-height: 1122px;
+            }
+
+            html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                min-width: auto !important;
+                background: #fff !important;
+            }
+
+            body {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            .page-container {
+                margin: 0 auto !important;
+                width: var(--print-page-width) !important;
+                height: var(--print-page-height) !important;
+                overflow: hidden !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+
+            .page-container:has(+ .page-container) {
+                break-after: page !important;
+                page-break-after: always !important;
+            }
+
+            .page-container:not(:has(+ .page-container)) {
+                break-after: auto !important;
+                page-break-after: auto !important;
+            }
+
+            .page {
+                margin: 0 !important;
+                zoom: var(--print-page-scale) !important;
+                transform: none !important;
+                break-inside: avoid-page !important;
+                page-break-inside: avoid !important;
+            }
+        }
         .annotations-container {
             position: absolute;
             pointer-events: none;
@@ -98,6 +149,8 @@
             cursor: pointer;
         }
     
+        
+        
         
         
         
@@ -797,7 +850,7 @@ INTERMEDIATE • CARDIO BARRE • MAT 57 • INTERMEDIATE • CARDIO BARRE • M
         <span class="t sb" style="left:71px;bottom:896px;letter-spacing:-0.09px;"></span>
         <span class="t sc" style="left:71px;bottom:1092px;letter-spacing:-0.5px;">STUDIO </span>
         <span class="t sc" style="left:71px;bottom:1032px;letter-spacing:-0.15px;">SCHEDULE </span>
-        <span class="t sd" style="left:76px;bottom:970px;letter-spacing:-0.5px;word-spacing:0.11px;font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:700;font-size:54px;">March 30th - April 5th</span>
+        <span class="t sd" style="left:76px;bottom:970px;letter-spacing:-0.5px;word-spacing:0.11px;font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:700;font-size:54px;">April 6th - April 12th</span>
 
 
       </div>
@@ -871,7 +924,7 @@ INTERMEDIATE • CARDIO BARRE • MAT 57 • INTERMEDIATE • CARDIO BARRE • M
         <span class="t sc" style="left:71px;bottom:1032px;letter-spacing:-0.15px;">SCHEDULE </span>
         <span class="t s3" style="left:682px;bottom:1185px;letter-spacing:-0.79px;font-size:32px;">BANDRA</span>
 
-        <span class="t sd" style="left:76px;bottom:970px;letter-spacing:-0.5px;word-spacing:0.11px;font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:800;font-size:54px;">March 30th - April 5th</span>
+        <span class="t sd" style="left:76px;bottom:970px;letter-spacing:-0.5px;word-spacing:0.11px;font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:800;font-size:54px;">April 6th - April 12th</span>
         <span class="t v0 s5" style="left:576px;bottom:167px;letter-spacing:0.22px;"></span>
 
 

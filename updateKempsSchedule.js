@@ -6366,7 +6366,51 @@ Return ONLY valid JSON, no other text.`;
                     body, .page, * {
                         -webkit-print-color-adjust: exact !important;
                         print-color-adjust: exact !important;
-                        color-adjust: exact !important;
+                    }
+
+                    @page {
+                        size: A4 portrait;
+                        margin: 0;
+                    }
+
+                    :root {
+                        --print-page-scale: 0.87245;
+                        --print-page-width: 793px;
+                        --print-page-height: 1122px;
+                    }
+
+                    html, body {
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        min-width: auto !important;
+                        background: #fff !important;
+                    }
+
+                    .page-container {
+                        margin: 0 auto !important;
+                        width: var(--print-page-width) !important;
+                        height: var(--print-page-height) !important;
+                        overflow: hidden !important;
+                        break-inside: avoid !important;
+                        page-break-inside: avoid !important;
+                    }
+
+                    .page-container:has(+ .page-container) {
+                        break-after: page !important;
+                        page-break-after: always !important;
+                    }
+
+                    .page-container:not(:has(+ .page-container)) {
+                        break-after: auto !important;
+                        page-break-after: auto !important;
+                    }
+
+                    .page {
+                        margin: 0 !important;
+                        zoom: var(--print-page-scale) !important;
+                        transform: none !important;
+                        break-inside: avoid-page !important;
+                        page-break-inside: avoid !important;
                     }
                     
                     /* Ensure sold-out badges and lines render properly */
@@ -7352,6 +7396,41 @@ Return ONLY valid JSON, no other text.`;
                     .annotations-container, .annotations-container * { display:none !important; }
                     a[href*="idrsolutions"], a[href*="idrsolutions.com"] { display:none !important; }
                     body, .page, * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                    @page { size: A4 portrait; margin: 0; }
+                    :root {
+                        --print-page-scale: 0.87245;
+                        --print-page-width: 793px;
+                        --print-page-height: 1122px;
+                    }
+                    html, body {
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        min-width: auto !important;
+                        background: #fff !important;
+                    }
+                    .page-container {
+                        margin: 0 auto !important;
+                        width: var(--print-page-width) !important;
+                        height: var(--print-page-height) !important;
+                        overflow: hidden !important;
+                        break-inside: avoid !important;
+                        page-break-inside: avoid !important;
+                    }
+                    .page-container:has(+ .page-container) {
+                        break-after: page !important;
+                        page-break-after: always !important;
+                    }
+                    .page-container:not(:has(+ .page-container)) {
+                        break-after: auto !important;
+                        page-break-after: auto !important;
+                    }
+                    .page {
+                        margin: 0 !important;
+                        zoom: var(--print-page-scale) !important;
+                        transform: none !important;
+                        break-inside: avoid-page !important;
+                        page-break-inside: avoid !important;
+                    }
                     
                     /* Ensure theme-related elements are completely hidden (except badges) */
                     .theme-index,
