@@ -2481,8 +2481,9 @@ Return ONLY valid JSON, no other text.`;
                         if (!className || !this.isValidClassName(className)) continue;
 
                         const trainerRaw = row[colConfig.trainer1Col];
+                        const trainer2Raw = colConfig.trainer2Col >= 0 ? row[colConfig.trainer2Col] : '';
                         const coverRaw = colConfig.coverCol >= 0 ? row[colConfig.coverCol] : '';
-                        const themeRaw = colConfig.themeCol >= 0 ? row[colConfig.themeCol] : row[colConfig.trainer2Col];
+                        const themeRaw = colConfig.themeCol >= 0 ? row[colConfig.themeCol] : '';
                         
                         // Parse time first so it's available for logging
                         const timeRaw = row[timeColIndex];
@@ -2491,6 +2492,14 @@ Return ONLY valid JSON, no other text.`;
                         
                         let trainer = this.normalizeTrainerName(trainerRaw);
                         let notes = '';
+
+                        if (!trainer) {
+                            const secondaryTrainer = this.normalizeTrainerName(trainer2Raw);
+                            if (secondaryTrainer && this.isTrainerName(secondaryTrainer)) {
+                                trainer = secondaryTrainer;
+                                console.log(`  ↪ Using Trainer 2 at ${day} ${time}: ${secondaryTrainer}`);
+                            }
+                        }
                         
                         // **STEP 1: Check if this is a hosted class (class name = "hosted") - CHECK THIS FIRST**
                         const isHostedClass = (trainerRaw && trainerRaw.toString().toLowerCase().includes('hosted')) || 
@@ -3083,6 +3092,38 @@ Return ONLY valid JSON, no other text.`;
             if (low === val || low.startsWith(val + ' ')) return t;
         }
         return raw.toString().trim();
+    }
+
+    /**
+     * Check whether notes or theme mark a class as sold out.
+     */
+    isSoldOutClass(classData = {}) {
+        const notes = String(classData.Notes || classData.notes || '').trim();
+        const theme = String(classData.Theme || classData.theme || '').trim();
+        return /\bsold\s*out\b/i.test(notes) || /\bsold\s*out\b/i.test(theme);
+    }
+
+    /**
+     * Hosted classes and rows without any resolved trainer should never be rendered into PDFs.
+     */
+    shouldExcludeClassFromPdf(classData = {}) {
+        const className = String(classData.Class || classData.class || '').trim();
+        const trainer = String(classData.Trainer || classData.trainer || '').trim();
+        const notes = String(classData.Notes || classData.notes || '').trim();
+
+        if (/\bhosted\b/i.test(className) || /\bhosted\b/i.test(notes)) {
+            return true;
+        }
+
+        if (!trainer) {
+            return true;
+        }
+
+        if (this.isSoldOutClass(classData)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -4037,8 +4078,15 @@ Return ONLY valid JSON, no other text.`;
         if (this.kwalityClasses.length > 0) {
             console.log(`📋 Sample classData keys:`, Object.keys(this.kwalityClasses[0]));
         }
+
+        let excludedFromPdfCount = 0;
         
         this.kwalityClasses.forEach(classData => {
+            if (this.shouldExcludeClassFromPdf(classData)) {
+                excludedFromPdfCount++;
+                return;
+            }
+
             // Normalize day value to Title Case keys used in scheduleByDay
             const rawDay = String(classData.Day || classData.day || classData.DayName || '').trim();
             if (!rawDay) return; // skip records without day
@@ -4086,6 +4134,11 @@ Return ONLY valid JSON, no other text.`;
                 });
             }
         });
+
+        if (excludedFromPdfCount > 0) {
+            console.log(`🚫 Excluded ${excludedFromPdfCount} hosted / sold-out / trainerless classes from HTML/PDF output`);
+        }
+
         return scheduleByDay;
     }
 
