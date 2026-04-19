@@ -4305,7 +4305,7 @@ Return ONLY valid JSON, no other text.`;
      */
     buildStaticThemeColorMap() {
         const palette = [
-            '#E992B0', '#F0AE38', '#D9B53E', '#71C5E8', '#8FD17E', '#B994EE',
+            '#E992B0', '#fff0a6', '#D9B53E', '#71C5E8', '#8FD17E', '#B994EE',
             '#F2A266', '#EC98B0', '#7ECF97', '#5EB7DF', '#B7D86F', '#E1C857',
             '#B886E4', '#B4CD65', '#F1B09E', '#82C2EE', '#E8BB7A', '#CCD964'
         ];
@@ -4528,7 +4528,7 @@ Return ONLY valid JSON, no other text.`;
      * Pick one of the flat pastel highlight colors used in index 7.html.
      */
     getStaticThemeHighlightColor(theme) {
-        const palette = ['#E992B0', '#F0AE38', '#D9B53E', '#71C5E8', '#8FD17E', '#B994EE'];
+        const palette = ['#E992B0', '#fff0a6', '#D9B53E', '#71C5E8', '#8FD17E', '#B994EE'];
         const value = String(theme || '');
         let hash = 0;
 
