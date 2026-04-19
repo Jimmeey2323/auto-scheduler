@@ -3898,6 +3898,7 @@ Return ONLY valid JSON, no other text.`;
         this.resetStaticThemeState();
         this.cleanupStaticThemeArtifacts();
         this.ensureThemeBadgeCSS();
+        this.ensureStaticThemeArtifactCSS();
         
         // Ensure sold-out badge CSS is present
         this.ensureSoldOutBadgeCSS();
@@ -3911,6 +3912,8 @@ Return ONLY valid JSON, no other text.`;
         this.staticThemeRows = [];
         this.staticThemeColorMap = new Map();
         this.staticThemeLegendAssetMap = new Map();
+        this.staticThemeSharedWidth = null;
+        this.staticThemeIndexBandWidth = 80.2;
     }
 
     /**
@@ -3937,12 +3940,14 @@ Return ONLY valid JSON, no other text.`;
         }
 
         const isBandra = String(this.currentLocation || '').toLowerCase().includes('bandra');
+        const badgePadding = isBandra ? '3px 10px' : '3px 11px';
+        const badgeBorderRadius = isBandra ? '8px' : '6px';
         const themeBadgeCSS = `
         .theme-badge {
-            background: #f5bcd0;
+            background: linear-gradient(135deg, rgba(245, 188, 208, 0.82) 0%, rgba(245, 188, 208, 0.62) 100%);
             color: #2C2D2D;
-            padding: 3px 10px;
-            border-radius: 12px; /* Reduced border radius */
+            padding: ${badgePadding};
+            border-radius: ${badgeBorderRadius};
             font-size: ${isBandra ? '8.5px' : '8px'};
             font-weight: 700;
             font-family: 'Montserrat', sans-serif;
@@ -3950,17 +3955,19 @@ Return ONLY valid JSON, no other text.`;
             display: inline-block;
             vertical-align: middle;
             line-height: 1.3;
-            box-shadow: 0 2px 6px rgba(69, 59, 42, 0.18);
-            border: 1px solid rgba(69, 59, 42, 0.16);
+            box-shadow: 0 6px 14px rgba(69, 59, 42, 0.12);
+            border: none;
             letter-spacing: ${isBandra ? '0.28px' : '0.1px'};
             text-transform: uppercase;
-            min-width: calc(95%); /* Increased width by 5% */
-            max-width: calc(105%); /* Increased width by 5% */
+            min-width: fit-content;
+            max-width: ${isBandra ? '148px' : '180px'};
             text-align: center;
             white-space: normal;
             word-wrap: break-word;
             position: relative;
             top: -1px;
+            backdrop-filter: blur(12px) saturate(140%);
+            -webkit-backdrop-filter: blur(12px) saturate(140%);
         }`;
 
         let existingStyle = styleTag.html() || '';
@@ -3974,6 +3981,57 @@ Return ONLY valid JSON, no other text.`;
             styleTag.append(themeBadgeCSS);
         }
         console.log('✅ Theme badge CSS applied');
+    }
+
+    /**
+     * Ensure static theme highlight/index CSS matches the current borderless surface treatment.
+     */
+    ensureStaticThemeArtifactCSS() {
+        const styleTag = this.$('style').first();
+        if (!styleTag.length) {
+            console.warn('⚠️  No style tag found, skipping static theme CSS check');
+            return;
+        }
+
+        const staticThemeCSS = `
+        .theme-row-highlight,
+        .theme-index-band {
+            border-radius: 8px !important;
+            border: none !important;
+            box-shadow: 0 10px 22px rgba(69, 59, 42, 0.10) !important;
+            opacity: 1;
+        }
+
+        .theme-row-highlight {
+            transform: none !important;
+            transform-origin: left center;
+        }
+
+        .theme-index-band {
+            transform: none !important;
+            transform-origin: left center;
+        }
+
+        .theme-index-entry {
+            color: #453b2a !important;
+            font-family: 'Montserrat-Bold_1z', 'Montserrat-Bold_21', 'Montserrat', sans-serif !important;
+            font-size: 12px !important;
+            font-style: normal !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.32px !important;
+            text-transform: uppercase;
+            text-shadow: none !important;
+        }`;
+
+        let existingStyle = styleTag.html() || '';
+        existingStyle = existingStyle
+            .replace(/\.theme-row-highlight,\s*\.theme-index-band\s*\{[^}]+\}/gs, '')
+            .replace(/\.theme-row-highlight\s*\{[^}]+\}/gs, '')
+            .replace(/\.theme-index-band\s*\{[^}]+\}/gs, '')
+            .replace(/\.theme-index-entry\s*\{[^}]+\}/gs, '');
+
+        styleTag.html(existingStyle + staticThemeCSS);
+        console.log('✅ Static theme artifact CSS applied');
     }
 
     /**
@@ -4224,6 +4282,14 @@ Return ONLY valid JSON, no other text.`;
     }
 
     /**
+     * Shared static-theme sizing should only consider rows that actually render a visible theme.
+     */
+    hasRenderableStaticTheme(theme = '') {
+        const cleanTheme = String(theme || '').trim();
+        return !!cleanTheme && cleanTheme.toLowerCase() !== 'sold out';
+    }
+
+    /**
      * Bandra static exports render the theme inline inside the row text.
      */
     shouldInlineStaticTheme(location = '') {
@@ -4302,6 +4368,38 @@ Return ONLY valid JSON, no other text.`;
         return Math.ceil(width);
     }
 
+    hexToRgba(hex, alpha = 1) {
+        const normalized = String(hex || '').trim().replace('#', '');
+        if (!normalized) return `rgba(255, 255, 255, ${alpha})`;
+
+        const expanded = normalized.length === 3
+            ? normalized.split('').map((char) => char + char).join('')
+            : normalized;
+
+        const value = expanded.padEnd(6, 'f').slice(0, 6);
+        const r = parseInt(value.slice(0, 2), 16);
+        const g = parseInt(value.slice(2, 4), 16);
+        const b = parseInt(value.slice(4, 6), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    getThemeSurfaceStyles(color, variant = 'row') {
+        const baseColor = color || '#fff0a6';
+        const background = variant === 'badge'
+            ? `linear-gradient(135deg, ${this.hexToRgba(baseColor, 0.82)} 0%, ${this.hexToRgba(baseColor, 0.64)} 100%)`
+            : `linear-gradient(135deg, ${this.hexToRgba(baseColor, 0.74)} 0%, ${this.hexToRgba(baseColor, 0.54)} 100%)`;
+
+        return {
+            background,
+            border: 'none',
+            boxShadow: variant === 'badge'
+                ? '0 6px 14px rgba(69,59,42,0.12)'
+                : '0 10px 22px rgba(69,59,42,0.10)',
+            backdropFilter: 'blur(12px) saturate(140%)',
+            WebkitBackdropFilter: 'blur(12px) saturate(140%)'
+        };
+    }
+
     /**
      * Estimate the sold-out strike width so it covers time + class + trainer text
      * and stops just before the SOLD OUT badge begins.
@@ -4322,6 +4420,42 @@ Return ONLY valid JSON, no other text.`;
         return Math.max(baseWidth, Math.ceil(prefixWidth + textWidth + 18));
     }
 
+    getStaticThemeMaxWidthForRow(row = {}) {
+        if (this.usesBandraStaticThemeGeometry(row.location)) {
+            const timeAnchor = Number(row.timeLeft || row.highlightLeft || 0);
+            const rowBottom = Number(row.rowBottom || 0);
+            const isRightColumn = timeAnchor >= 430;
+            const isLowerSection = rowBottom < 400;
+            return isRightColumn ? (isLowerSection ? 396 : 412) : (isLowerSection ? 395 : 384);
+        }
+
+        const highlightLeft = Number(row.highlightLeft || 0);
+        const isRightColumn = Number(row.timeLeft || highlightLeft || 0) >= 430;
+        const maxRightBoundary = isRightColumn ? 860 : 451;
+        return Math.max(365, Math.floor(maxRightBoundary - highlightLeft));
+    }
+
+    computeSharedStaticThemeWidth(rows = []) {
+        const themedRows = rows.filter((row) => this.hasRenderableStaticTheme(row?.theme));
+        if (!themedRows.length) return 365;
+
+        const longestDesiredWidth = themedRows.reduce((maxWidth, row) => {
+            const desiredWidth = this.getDesiredStaticHighlightWidth({
+                highlightLeft: row.highlightLeft,
+                textLeft: row.textLeft,
+                text: row.classText || '',
+                baseWidth: 365
+            });
+            return Math.max(maxWidth, desiredWidth);
+        }, 365);
+
+        const sharedSafeMaxWidth = themedRows.reduce((minWidth, row) => {
+            return Math.min(minWidth, this.getStaticThemeMaxWidthForRow(row));
+        }, Number.POSITIVE_INFINITY);
+
+        return Math.max(365, Math.min(Math.ceil(longestDesiredWidth + 8), sharedSafeMaxWidth));
+    }
+
     /**
      * Bandra static highlights should sit a touch tighter than the previous full-width version.
      */
@@ -4335,7 +4469,7 @@ Return ONLY valid JSON, no other text.`;
      */
     registerStaticThemeRow(rowConfig) {
         if (!this.shouldRenderStaticTheme()) return;
-        if (!rowConfig || !rowConfig.theme) return;
+        if (!rowConfig || !this.hasRenderableStaticTheme(rowConfig.theme)) return;
 
         this.staticThemeRows.push({
             theme: String(rowConfig.theme).trim(),
@@ -4400,13 +4534,14 @@ Return ONLY valid JSON, no other text.`;
      */
     resolveStaticThemeHighlightGeometry(row) {
         const fallbackHeight = row.highlightHeight || 23.2;
+        const sharedWidth = Number(this.staticThemeSharedWidth || 0);
         // rowBottom is tracked as the text baseline for the themed row.
         // Position the highlight to sit on that same row instead of shifting it
         // down by a full highlight height, which makes it appear on the next row.
         const fallbackBottom = (row.rowBottom || 0) - 1;
         const geometry = {
             left: row.highlightLeft,
-            width: row.highlightWidth,
+            width: sharedWidth > 0 ? sharedWidth : row.highlightWidth,
             height: fallbackHeight,
             bottom: fallbackBottom
         };
@@ -4419,7 +4554,7 @@ Return ONLY valid JSON, no other text.`;
         const rowBottom = Number(row.rowBottom || 0);
         const isRightColumn = timeAnchor >= 430;
         const isLowerSection = rowBottom < 400;
-        const desiredWidth = Number(row.highlightWidth || 0);
+        const desiredWidth = sharedWidth > 0 ? sharedWidth : Number(row.highlightWidth || 0);
         const maxWidth = isRightColumn ? 412 : ((Number(row.page || 1) >= 2) ? 420 : 412);
         const hasInlineThemeLabel = this.shouldInlineStaticTheme(row.location) && /\[[^\]]+\]/.test(row.classText || '');
         const reducedMaxWidth = this.getReducedInlineStaticHighlightWidth(maxWidth, row.location);
@@ -4506,11 +4641,14 @@ Return ONLY valid JSON, no other text.`;
 
         this.cleanupStaticThemeArtifacts();
 
-        const validRows = this.staticThemeRows.filter(row => row.theme && row.theme.trim());
+        const validRows = this.staticThemeRows.filter(row => this.hasRenderableStaticTheme(row.theme));
         if (validRows.length === 0) {
             console.log('ℹ️  No themed rows found for static theme rendering');
             return;
         }
+
+        this.staticThemeSharedWidth = this.computeSharedStaticThemeWidth(validRows);
+        this.staticThemeIndexBandWidth = Math.max(82, Math.min(96, Math.round(this.staticThemeSharedWidth * 0.24)));
 
         this.buildStaticThemeColorMap();
         this.renderStaticThemeHighlights(validRows);
@@ -4534,7 +4672,8 @@ Return ONLY valid JSON, no other text.`;
             if (!$container.length) return;
 
             const geometry = this.resolveStaticThemeHighlightGeometry(row);
-            const highlightHtml = `<span class="theme-row-highlight" style="position:absolute;left:${geometry.left}px;bottom:${geometry.bottom}px;width:${geometry.width}px;height:${geometry.height}px;background:${color};z-index:1;display:block;border-radius:14px;border:1px solid rgba(99,74,23,0.18);box-shadow:0 7px 16px rgba(77,58,17,0.16), inset 0 1px 0 rgba(255,255,255,0.34);opacity:1;"></span>`;
+            const surfaceStyles = this.getThemeSurfaceStyles(color, 'row');
+            const highlightHtml = `<span class="theme-row-highlight" style="position:absolute;left:${geometry.left}px;bottom:${geometry.bottom}px;width:${geometry.width}px;height:${geometry.height}px;background:${surfaceStyles.background};z-index:1;display:block;border-radius:8px;border:${surfaceStyles.border};box-shadow:${surfaceStyles.boxShadow};backdrop-filter:${surfaceStyles.backdropFilter};-webkit-backdrop-filter:${surfaceStyles.WebkitBackdropFilter};opacity:1;"></span>`;
             $container.append(highlightHtml);
         });
     }
@@ -4550,25 +4689,25 @@ Return ONLY valid JSON, no other text.`;
         const $container = $lastPage.find('.text-container').first();
         if (!$container.length) return;
 
-        const startTextLeft = 571;
         const startBandLeft = 482.7;
         const startBottom = 304;
         const lineGap = 37;
         const columnGap = 185;
         const maxRowsPerColumn = 5;
-        const bandWidth = 80.2;
+        const bandWidth = this.staticThemeIndexBandWidth || 80.2;
         const bandHeight = 23.2;
-        const bandTextGap = startTextLeft - startBandLeft - bandWidth;
+        const legendLabelGap = 18;
 
         orderedThemes.forEach((themeName, index) => {
             const column = Math.floor(index / maxRowsPerColumn);
             const row = index % maxRowsPerColumn;
-            const textLeft = startTextLeft + (column * columnGap);
             const bandLeft = startBandLeft + (column * columnGap);
+            const textLeft = bandLeft + bandWidth + legendLabelGap;
             const bottom = startBottom - (row * lineGap);
             const bandBottom = bottom - 2;
             const color = this.staticThemeColorMap.get(themeName) || '#fff0a6';
-            const bandHtml = `<span class="theme-index-band" style="position:absolute;left:${bandLeft}px;bottom:${bandBottom}px;width:${bandWidth}px;height:${bandHeight}px;background:${color};z-index:1;display:block;border-radius:14px;border:1px solid rgba(99,74,23,0.18);box-shadow:0 7px 16px rgba(77,58,17,0.16), inset 0 1px 0 rgba(255,255,255,0.34);opacity:1;"></span>`;
+            const surfaceStyles = this.getThemeSurfaceStyles(color, 'index');
+            const bandHtml = `<span class="theme-index-band" style="position:absolute;left:${bandLeft}px;bottom:${bandBottom}px;width:${bandWidth}px;height:${bandHeight}px;background:${surfaceStyles.background};z-index:1;display:block;border-radius:8px;border:${surfaceStyles.border};box-shadow:${surfaceStyles.boxShadow};backdrop-filter:${surfaceStyles.backdropFilter};-webkit-backdrop-filter:${surfaceStyles.WebkitBackdropFilter};opacity:1;"></span>`;
             const entryHtml = `<span class="t v0 s8 theme-index-entry" style="left:${textLeft}px;bottom:${bottom}px;letter-spacing:0.32px;z-index:2;font-family:Montserrat-Bold_1z,Montserrat-Bold_21,Montserrat,sans-serif;font-size:12px;font-style:normal;font-weight:700;color:#453b2a;">${themeName}</span>`;
             $container.append(bandHtml);
             $container.append(entryHtml);
@@ -4641,29 +4780,34 @@ Return ONLY valid JSON, no other text.`;
         // Use consistent ⚡️ icon for all badges
         const icon = '⚡️';
         
+        const isBandra = location.toLowerCase().includes('bandra');
+        const surfaceStyles = this.getThemeSurfaceStyles(badgeColor, 'badge');
+
         // Standardized styling for both locations using the requested flat pastel badge palette.
         const standardStyle = {
-            background: badgeColor,
+            background: surfaceStyles.background,
             color: '#2C2D2D',
-            padding: '3px 10px',
-            borderRadius: '999px',
-            fontSize: location.toLowerCase().includes('bandra') ? '8.5px' : '8px',
+            padding: isBandra ? '3px 10px' : '3px 11px',
+            borderRadius: isBandra ? '8px' : '6px',
+            fontSize: isBandra ? '8.5px' : '8px',
             fontWeight: '700',
-            marginLeft: location.toLowerCase().includes('bandra') ? '9px' : '6px',
+            marginLeft: isBandra ? '9px' : '6px',
             display: 'inline-block',
             verticalAlign: 'middle',
             lineHeight: '1.3',
-            boxShadow: '0 2px 6px rgba(69,59,42,0.18)',
-            letterSpacing: location.toLowerCase().includes('bandra') ? '0.28px' : '0.1px',
+            boxShadow: surfaceStyles.boxShadow,
+            letterSpacing: isBandra ? '0.28px' : '0.1px',
             textTransform: 'uppercase',
             minWidth: 'fit-content',
-            maxWidth: location.toLowerCase().includes('bandra') ? '148px' : '180px',
+            maxWidth: isBandra ? '148px' : '180px',
             textAlign: 'center',
             whiteSpace: 'normal',
             wordWrap: 'break-word',
-            border: '1px solid rgba(69,59,42,0.16)',
+            border: surfaceStyles.border,
             position: 'relative',
-            top: '-1px'
+            top: '-1px',
+            backdropFilter: surfaceStyles.backdropFilter,
+            WebkitBackdropFilter: surfaceStyles.WebkitBackdropFilter
         };
         
         // Convert style object to CSS string
@@ -7795,8 +7939,10 @@ if (isMain) {
     const args = process.argv.slice(2);
     const skipEmail = args.includes('--skip-email') || args.includes('--html-only');
     const staticThemeMode = args.includes('--static');
+    const badgeThemeMode = args.includes('--badge');
     const skipPdf = args.includes('--skip-pdf');
     const serveTabs = args.includes('--serve-tabs');
+    const resolvedStaticThemeMode = badgeThemeMode ? false : (staticThemeMode || serveTabs);
     
     // Show help if requested
     if (args.includes('--help') || args.includes('-h')) {
@@ -7804,16 +7950,20 @@ if (isMain) {
         console.log('Options:');
         console.log('  --skip-email, --html-only   Skip email processing, use existing Cleaned sheet data');
         console.log('  --static                    Render themes as plain static text instead of badges');
+        console.log('  --badge                     Force badge rendering even in local preview mode');
         console.log('  --serve-tabs                Serve generated HTML locally and open each file in its own browser tab');
         console.log('  --help, -h                  Show this help message\n');
         console.log('Examples:');
         console.log('  node updateKempsSchedule.js                    # Full workflow (email + sheets + HTML)');
         console.log('  node updateKempsSchedule.js --skip-email       # Skip email, update HTML from existing data');
         console.log('  node updateKempsSchedule.js --static           # Full workflow with static theme text');
-        console.log('  node updateKempsSchedule.js --serve-tabs       # Generate, serve, and open Kemps/Bandra previews in tabs');
+        console.log('  node updateKempsSchedule.js --serve-tabs       # Generate local previews that match the Vercel static build');
+        console.log('  node updateKempsSchedule.js --serve-tabs --badge # Generate local preview tabs with theme badges');
         console.log('  npm run update                                 # Full workflow');
         console.log('  npm run update -- --static                     # Full workflow with static theme text');
         console.log('  npm run update -- --serve-tabs                 # Full workflow plus local browser preview tabs');
+        console.log('  npm run preview                                # Local preview tabs matching Vercel output');
+        console.log('  npm run preview:badge                          # Local preview tabs with badge rendering');
         console.log('  npm run update -- --skip-email                 # Skip email via npm\n');
         process.exit(0);
     }
@@ -7830,13 +7980,16 @@ if (isMain) {
         console.log('⏭️  Mode: Skip email processing (using existing Cleaned sheet data)\n');
     }
 
-    console.log(`🎨 Theme render mode: ${staticThemeMode ? 'static text' : 'badge'}`);
+    console.log(`🎨 Theme render mode: ${resolvedStaticThemeMode ? 'static text' : 'badge'}`);
     if (serveTabs) {
         console.log('🌐 Preview mode: serve generated HTML and open each file in a separate browser tab');
+        if (!staticThemeMode && !badgeThemeMode) {
+            console.log('🪞 Local preview parity: --serve-tabs defaults to Vercel-style static theme rendering');
+        }
     }
 
     const updater = new ScheduleUpdater(htmlPath, outputPath, 'kemps', {
-        themeRenderMode: staticThemeMode ? 'static' : 'badge',
+        themeRenderMode: resolvedStaticThemeMode ? 'static' : 'badge',
         skipPdf: skipPdf
     }); // No CSV needed
     

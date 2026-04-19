@@ -8,6 +8,8 @@
     "update": "node updateKempsSchedule.js",
     "update:html-only": "node updateKempsSchedule.js --skip-email",
     "update:skip-email": "node updateKempsSchedule.js --skip-email",
+    "preview": "node updateKempsSchedule.js --serve-tabs",
+    "preview:badge": "node updateKempsSchedule.js --serve-tabs --badge",
     "preview:bridge": "node momenceDashboardPreviewBridge.js",
     "build": "node updateKempsSchedule.js --static --skip-pdf",
     "reauth": "node reauth.js",
