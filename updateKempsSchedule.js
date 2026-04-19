@@ -4176,7 +4176,9 @@ Return ONLY valid JSON, no other text.`;
      * Bandra static exports render the theme inline inside the row text.
      */
     shouldInlineStaticTheme(location = '') {
-        return this.shouldRenderStaticTheme() && this.usesBandraStaticThemeGeometry(location || this.currentLocation);
+        // Bandra static schedules now mirror Kemps by keeping theme names in the
+        // bottom legend instead of appending them inline next to trainer names.
+        return false;
     }
 
     /**
@@ -4303,9 +4305,9 @@ Return ONLY valid JSON, no other text.`;
      */
     buildStaticThemeColorMap() {
         const palette = [
-            '#F4C3DA', '#FEC95D', '#FEC870', '#BEE7F7', '#CDECCF', '#E8D5FF',
-            '#FFD6A5', '#FFCAD4', '#C7F9CC', '#A9DEF9', '#D0F4DE', '#FFF1A8',
-            '#E4C1F9', '#C1FBA4', '#F9C6C9', '#B8E1FF', '#FFD8BE', '#D9ED92'
+            '#E5B7C5', '#E4B35B', '#D7BF72', '#A8D0DE', '#BFD8B2', '#D8C6E8',
+            '#EAC6A2', '#E7BEC8', '#BFDDBF', '#9FCBDA', '#C8E0C8', '#E6D78F',
+            '#D8BFE2', '#C7D7A1', '#E8C5C0', '#B6D5E6', '#E9CFB8', '#CEDA96'
         ];
         const colorMap = new Map();
         const legendAssetMap = new Map();
@@ -4461,7 +4463,7 @@ Return ONLY valid JSON, no other text.`;
 
         this.buildStaticThemeColorMap();
         this.renderStaticThemeHighlights(validRows);
-        const shouldRenderIndex = validRows.some((row) => !this.usesBandraStaticThemeGeometry(row.location));
+        const shouldRenderIndex = this.staticThemeColorMap.size > 0;
         if (shouldRenderIndex) {
             this.renderStaticThemeIndex(validRows);
         }
@@ -4481,14 +4483,7 @@ Return ONLY valid JSON, no other text.`;
             if (!$container.length) return;
 
             const geometry = this.resolveStaticThemeHighlightGeometry(row);
-
-            const exactStripAsset = this.usesBandraStaticThemeGeometry(row.location)
-                ? this.getBandraStaticHighlightAsset(geometry)
-                : null;
-
-            const highlightHtml = exactStripAsset
-                ? `<img class="theme-row-highlight" src="${exactStripAsset}" style="position:absolute;left:${geometry.left}px;bottom:${geometry.bottom}px;width:${geometry.width}px;height:${geometry.height}px;z-index:1;display:block;pointer-events:none;user-select:none;" alt="" />`
-                : `<span class="theme-row-highlight" style="position:absolute;left:${geometry.left}px;bottom:${geometry.bottom}px;width:${geometry.width}px;height:${geometry.height}px;background:${color};z-index:1;display:block;"></span>`;
+            const highlightHtml = `<span class="theme-row-highlight" style="position:absolute;left:${geometry.left}px;bottom:${geometry.bottom}px;width:${geometry.width}px;height:${geometry.height}px;background:${color};z-index:1;display:block;border-radius:14px;border:1px solid rgba(145,126,83,0.34);box-shadow:0 7px 16px rgba(123,107,69,0.11), inset 0 1px 0 rgba(255,255,255,0.58);filter:saturate(0.88) brightness(0.96) contrast(1.07);opacity:0.99;"></span>`;
             $container.append(highlightHtml);
         });
     }
@@ -4522,11 +4517,8 @@ Return ONLY valid JSON, no other text.`;
             const bottom = startBottom - (row * lineGap);
             const bandBottom = bottom - 2;
             const color = this.staticThemeColorMap.get(themeName) || '#FEC95D';
-            const legendAsset = this.getStaticThemeLegendAsset(themeName);
-            const bandHtml = legendAsset
-                ? `<img class="theme-index-band" src="${legendAsset}" style="position:absolute;left:${bandLeft}px;bottom:${bandBottom}px;width:${bandWidth}px;height:${bandHeight}px;z-index:1;display:block;pointer-events:none;user-select:none;" alt="" />`
-                : `<span class="theme-index-band" style="position:absolute;left:${bandLeft}px;bottom:${bandBottom}px;width:${bandWidth}px;height:${bandHeight}px;background:${color};z-index:1;display:block;"></span>`;
-            const entryHtml = `<span class="t v0 s8 theme-index-entry" style="left:${textLeft}px;bottom:${bottom}px;letter-spacing:0.21px;z-index:2;">${themeName}</span>`;
+            const bandHtml = `<span class="theme-index-band" style="position:absolute;left:${bandLeft}px;bottom:${bandBottom}px;width:${bandWidth}px;height:${bandHeight}px;background:${color};z-index:1;display:block;border-radius:14px;border:1px solid rgba(145,126,83,0.34);box-shadow:0 7px 16px rgba(123,107,69,0.11), inset 0 1px 0 rgba(255,255,255,0.58);filter:saturate(0.88) brightness(0.96) contrast(1.07);opacity:0.99;"></span>`;
+            const entryHtml = `<span class="t v0 s8 theme-index-entry" style="left:${textLeft}px;bottom:${bottom}px;letter-spacing:0.32px;z-index:2;font-family:Montserrat-Bold_1z,Montserrat-Bold_21,Montserrat,sans-serif;font-size:12px;font-style:normal;font-weight:700;color:#453b2a;">${themeName}</span>`;
             $container.append(bandHtml);
             $container.append(entryHtml);
         });
@@ -4536,7 +4528,7 @@ Return ONLY valid JSON, no other text.`;
      * Pick one of the flat pastel highlight colors used in index 7.html.
      */
     getStaticThemeHighlightColor(theme) {
-        const palette = ['#F4C3DA', '#FEC95D', '#FEC870', '#BEE7F7', '#CDECCF', '#E8D5FF'];
+        const palette = ['#E5B7C5', '#E4B35B', '#D7BF72', '#A8D0DE', '#BFD8B2', '#D8C6E8'];
         const value = String(theme || '');
         let hash = 0;
 
@@ -4596,7 +4588,7 @@ Return ONLY valid JSON, no other text.`;
         // For Kemps: Much darker purple/indigo gradient for better visibility
         // For Bandra: Green gradient
         const bgColor = location.toLowerCase().includes('bandra') ? 
-            'linear-gradient(135deg, #022c22 0%, #064e3b 50%, #065f46 100%)' : 
+            'linear-gradient(135deg, #6f7d2a 0%, #536117 56%, #38440c 100%)' : 
             'linear-gradient(135deg, #2d1b69 0%, #1a0f3d 100%)';
         
         // Use consistent ⚡️ icon for all badges
@@ -4605,24 +4597,26 @@ Return ONLY valid JSON, no other text.`;
         // Standardized styling for both locations - one-sided rounded corners (right side only)
         const standardStyle = {
             background: bgColor,
-            color: 'white',
-            padding: '3px 8px 3px 6px',
-            borderRadius: '0 12px 12px 0', // One-sided rounded (right side only)
-            fontSize: '8px',      // Consistent font size
+            color: location.toLowerCase().includes('bandra') ? '#fffaf0' : 'white',
+            padding: location.toLowerCase().includes('bandra') ? '3px 10px' : '3px 8px 3px 6px',
+            borderRadius: location.toLowerCase().includes('bandra') ? '999px' : '0 12px 12px 0',
+            fontSize: location.toLowerCase().includes('bandra') ? '8.5px' : '8px',      // Consistent font size
             fontWeight: '700',    // Consistent font weight for badges
-            marginLeft: '6px',    // Consistent spacing from class name
+            marginLeft: location.toLowerCase().includes('bandra') ? '9px' : '6px',
             display: 'inline-block',
             verticalAlign: 'middle',
             lineHeight: '1.3',
-            boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
-            letterSpacing: '0.1px',
+            boxShadow: location.toLowerCase().includes('bandra')
+                ? '0 7px 16px rgba(74,88,24,0.22), 0 2px 4px rgba(55,64,17,0.14), inset 0 1px 0 rgba(255,255,255,0.16)'
+                : '0 2px 6px rgba(0,0,0,0.4)',
+            letterSpacing: location.toLowerCase().includes('bandra') ? '0.28px' : '0.1px',
             textTransform: 'uppercase',
             minWidth: 'fit-content',
-            maxWidth: '180px',
+            maxWidth: location.toLowerCase().includes('bandra') ? '148px' : '180px',
             textAlign: 'center',
             whiteSpace: 'normal',
             wordWrap: 'break-word',
-            border: '1px solid rgba(255,255,255,0.2)',
+            border: location.toLowerCase().includes('bandra') ? '1px solid rgba(255,250,240,0.22)' : '1px solid rgba(255,255,255,0.2)',
             position: 'relative',
             top: '-1px'
         };
