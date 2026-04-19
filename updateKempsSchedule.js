@@ -3942,7 +3942,7 @@ Return ONLY valid JSON, no other text.`;
             background: #f5bcd0;
             color: #2C2D2D;
             padding: 3px 10px;
-            border-radius: 999px;
+            border-radius: 12px; /* Reduced border radius */
             font-size: ${isBandra ? '8.5px' : '8px'};
             font-weight: 700;
             font-family: 'Montserrat', sans-serif;
@@ -3954,15 +3954,14 @@ Return ONLY valid JSON, no other text.`;
             border: 1px solid rgba(69, 59, 42, 0.16);
             letter-spacing: ${isBandra ? '0.28px' : '0.1px'};
             text-transform: uppercase;
-            min-width: fit-content;
-            max-width: ${isBandra ? '148px' : '180px'};
+            min-width: calc(95%); /* Increased width by 5% */
+            max-width: calc(105%); /* Increased width by 5% */
             text-align: center;
             white-space: normal;
             word-wrap: break-word;
             position: relative;
             top: -1px;
-        }
-        `;
+        }`;
 
         let existingStyle = styleTag.html() || '';
 
