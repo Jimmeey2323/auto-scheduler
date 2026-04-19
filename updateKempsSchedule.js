@@ -4528,7 +4528,7 @@ Return ONLY valid JSON, no other text.`;
      * Pick one of the flat pastel highlight colors used in index 7.html.
      */
     getStaticThemeHighlightColor(theme) {
-        const palette = ['#E992B0', '#F0AE38', '#D9B53E', '#71C5E8', '#8FD17E', '#B994EE'];
+        const palette = ['#f5bcd0', '#ffd58c', '#ffe62c', '#b6e4fb', '#bdffad', '#ddc6fc'];
         const value = String(theme || '');
         let hash = 0;
 
