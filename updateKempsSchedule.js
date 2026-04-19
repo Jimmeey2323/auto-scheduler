@@ -4357,9 +4357,9 @@ Return ONLY valid JSON, no other text.`;
      */
     buildStaticThemeColorMap() {
         const palette = [
-            '#E992B0', '#fff0a6', '#D9B53E', '#71C5E8', '#8FD17E', '#B994EE',
-            '#F2A266', '#EC98B0', '#7ECF97', '#5EB7DF', '#B7D86F', '#E1C857',
-            '#B886E4', '#B4CD65', '#F1B09E', '#82C2EE', '#E8BB7A', '#CCD964'
+            '#ffd5e3', '#fff0a6', '#ffdc9a', '#d0f1ff', '#d3fbc9', '#e2cdff',
+            '#ffddc4', '#ffd6e1', '#bafecf', '#dee3ff', '#B7D86F', '#ecebea',
+            '#B886E4', '#f6fedb', '#ffd7cc', '#82C2EE', '#ffcf94', '#f6ffb6'
         ];
         const colorMap = new Map();
         const legendAssetMap = new Map();
@@ -4529,7 +4529,7 @@ Return ONLY valid JSON, no other text.`;
     renderStaticThemeHighlights(rows) {
         rows.forEach((row) => {
             const themeKey = row.theme.trim().toUpperCase();
-            const color = this.staticThemeColorMap.get(themeKey) || '#FEC95D';
+            const color = this.staticThemeColorMap.get(themeKey) || '#fff0a6';
             const $page = this.$('section.page').eq(Math.max(0, (row.page || 1) - 1));
             const $container = $page.find('.text-container').first();
             if (!$container.length) return;
@@ -4568,7 +4568,7 @@ Return ONLY valid JSON, no other text.`;
             const bandLeft = startBandLeft + (column * columnGap);
             const bottom = startBottom - (row * lineGap);
             const bandBottom = bottom - 2;
-            const color = this.staticThemeColorMap.get(themeName) || '#FEC95D';
+            const color = this.staticThemeColorMap.get(themeName) || '#fff0a6';
             const bandHtml = `<span class="theme-index-band" style="position:absolute;left:${bandLeft}px;bottom:${bandBottom}px;width:${bandWidth}px;height:${bandHeight}px;background:${color};z-index:1;display:block;border-radius:14px;border:1px solid rgba(99,74,23,0.18);box-shadow:0 7px 16px rgba(77,58,17,0.16), inset 0 1px 0 rgba(255,255,255,0.34);opacity:1;"></span>`;
             const entryHtml = `<span class="t v0 s8 theme-index-entry" style="left:${textLeft}px;bottom:${bottom}px;letter-spacing:0.32px;z-index:2;font-family:Montserrat-Bold_1z,Montserrat-Bold_21,Montserrat,sans-serif;font-size:12px;font-style:normal;font-weight:700;color:#453b2a;">${themeName}</span>`;
             $container.append(bandHtml);
@@ -4580,7 +4580,7 @@ Return ONLY valid JSON, no other text.`;
      * Pick one of the flat pastel highlight colors used in index 7.html.
      */
     getStaticThemeHighlightColor(theme) {
-        const palette = ['#E992B0', '#fff0a6', '#D9B53E', '#71C5E8', '#8FD17E', '#B994EE'];
+        const palette = ['#ffd5e3', '#fff0a6', '#ffdc9a', '#d0f1ff', '#d3fbc9', '#e2cdff'];
         const value = String(theme || '');
         let hash = 0;
 
