@@ -3897,6 +3897,7 @@ Return ONLY valid JSON, no other text.`;
 
         this.resetStaticThemeState();
         this.cleanupStaticThemeArtifacts();
+        this.ensureThemeBadgeCSS();
         
         // Ensure sold-out badge CSS is present
         this.ensureSoldOutBadgeCSS();
@@ -3923,6 +3924,57 @@ Return ONLY valid JSON, no other text.`;
             this.$('.theme-badge').remove();
         }
         this.$('span').filter((_index, element) => this.$(element).text().trim().toUpperCase() === 'STATIC MAGIC').remove();
+    }
+
+    /**
+     * Ensure the base theme badge CSS matches the current pastel badge treatment.
+     */
+    ensureThemeBadgeCSS() {
+        const styleTag = this.$('style').first();
+        if (!styleTag.length) {
+            console.warn('⚠️  No style tag found, skipping theme badge CSS check');
+            return;
+        }
+
+        const isBandra = String(this.currentLocation || '').toLowerCase().includes('bandra');
+        const themeBadgeCSS = `
+        .theme-badge {
+            background: #f5bcd0;
+            color: #2C2D2D;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: ${isBandra ? '8.5px' : '8px'};
+            font-weight: 700;
+            font-family: 'Montserrat', sans-serif;
+            margin-left: ${isBandra ? '9px' : '6px'};
+            display: inline-block;
+            vertical-align: middle;
+            line-height: 1.3;
+            box-shadow: 0 2px 6px rgba(69, 59, 42, 0.18);
+            border: 1px solid rgba(69, 59, 42, 0.16);
+            letter-spacing: ${isBandra ? '0.28px' : '0.1px'};
+            text-transform: uppercase;
+            min-width: fit-content;
+            max-width: ${isBandra ? '148px' : '180px'};
+            text-align: center;
+            white-space: normal;
+            word-wrap: break-word;
+            position: relative;
+            top: -1px;
+        }
+        `;
+
+        let existingStyle = styleTag.html() || '';
+
+        if (existingStyle.includes('.theme-badge')) {
+            console.log('🎨 Updating theme badge CSS...');
+            existingStyle = existingStyle.replace(/\.theme-badge\s*\{[^}]+\}/g, '');
+            styleTag.html(existingStyle + themeBadgeCSS);
+        } else {
+            console.log('🎨 Injecting theme badge CSS...');
+            styleTag.append(themeBadgeCSS);
+        }
+        console.log('✅ Theme badge CSS applied');
     }
 
     /**
@@ -4583,32 +4635,26 @@ Return ONLY valid JSON, no other text.`;
     createThemeBadge(theme, location = 'kemps') {
         // Clean up the theme name
         let cleanTheme = theme.trim().toUpperCase();
-        
-        // Standardized background colors with improved contrast
-        // For Kemps: Much darker purple/indigo gradient for better visibility
-        // For Bandra: Green gradient
-        const bgColor = location.toLowerCase().includes('bandra') ? 
-            'linear-gradient(135deg, #022c22 0%, #064e3b 50%, #065f46 100%)' : 
-            'linear-gradient(135deg, #2d1b69 0%, #1a0f3d 100%)';
+
+        // Use the shared pastel palette for visual theme badges as well.
+        const badgeColor = this.getStaticThemeHighlightColor(cleanTheme);
         
         // Use consistent ⚡️ icon for all badges
         const icon = '⚡️';
         
-        // Standardized styling for both locations - one-sided rounded corners (right side only)
+        // Standardized styling for both locations using the requested flat pastel badge palette.
         const standardStyle = {
-            background: bgColor,
-            color: location.toLowerCase().includes('bandra') ? '#fffaf0' : 'white',
-            padding: location.toLowerCase().includes('bandra') ? '3px 10px' : '3px 8px 3px 6px',
-            borderRadius: location.toLowerCase().includes('bandra') ? '999px' : '0 12px 12px 0',
-            fontSize: location.toLowerCase().includes('bandra') ? '8.5px' : '8px',      // Consistent font size
-            fontWeight: '700',    // Consistent font weight for badges
+            background: badgeColor,
+            color: '#2C2D2D',
+            padding: '3px 10px',
+            borderRadius: '999px',
+            fontSize: location.toLowerCase().includes('bandra') ? '8.5px' : '8px',
+            fontWeight: '700',
             marginLeft: location.toLowerCase().includes('bandra') ? '9px' : '6px',
             display: 'inline-block',
             verticalAlign: 'middle',
             lineHeight: '1.3',
-            boxShadow: location.toLowerCase().includes('bandra')
-                ? '0 7px 18px rgba(4,78,59,0.24), 0 2px 4px rgba(2,44,34,0.18), inset 0 1px 0 rgba(255,255,255,0.14)'
-                : '0 2px 6px rgba(0,0,0,0.4)',
+            boxShadow: '0 2px 6px rgba(69,59,42,0.18)',
             letterSpacing: location.toLowerCase().includes('bandra') ? '0.28px' : '0.1px',
             textTransform: 'uppercase',
             minWidth: 'fit-content',
@@ -4616,7 +4662,7 @@ Return ONLY valid JSON, no other text.`;
             textAlign: 'center',
             whiteSpace: 'normal',
             wordWrap: 'break-word',
-            border: location.toLowerCase().includes('bandra') ? '1px solid rgba(240,253,250,0.22)' : '1px solid rgba(255,255,255,0.2)',
+            border: '1px solid rgba(69,59,42,0.16)',
             position: 'relative',
             top: '-1px'
         };
