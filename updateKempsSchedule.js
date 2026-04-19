@@ -4555,6 +4555,9 @@ Return ONLY valid JSON, no other text.`;
         const isRightColumn = timeAnchor >= 430;
         const isLowerSection = rowBottom < 400;
         const desiredWidth = sharedWidth > 0 ? sharedWidth : Number(row.highlightWidth || 0);
+        const legacyDefaultWidth = isRightColumn
+            ? (isLowerSection ? 396 : 412)
+            : (isLowerSection ? 395 : 384);
         const maxWidth = isRightColumn ? 412 : ((Number(row.page || 1) >= 2) ? 420 : 412);
         const hasInlineThemeLabel = this.shouldInlineStaticTheme(row.location) && /\[[^\]]+\]/.test(row.classText || '');
         const reducedMaxWidth = this.getReducedInlineStaticHighlightWidth(maxWidth, row.location);
@@ -4570,7 +4573,12 @@ Return ONLY valid JSON, no other text.`;
         }
 
         if (desiredWidth > 0) {
-            geometry.width = Math.min(reducedMaxWidth, Math.max(geometry.width, this.getReducedInlineStaticHighlightWidth(desiredWidth, row.location)));
+            geometry.width = Math.min(
+                reducedMaxWidth,
+                Math.max(365, this.getReducedInlineStaticHighlightWidth(desiredWidth, row.location))
+            );
+        } else {
+            geometry.width = legacyDefaultWidth;
         }
 
         if (hasInlineThemeLabel) {
