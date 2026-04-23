@@ -4021,6 +4021,11 @@ Return ONLY valid JSON, no other text.`;
             letter-spacing: 0.32px !important;
             text-transform: uppercase;
             text-shadow: none !important;
+            display: inline-block !important;
+            max-width: 300px !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
         }`;
 
         let existingStyle = styleTag.html() || '';
