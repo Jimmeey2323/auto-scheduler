@@ -4023,9 +4023,10 @@ Return ONLY valid JSON, no other text.`;
             text-shadow: none !important;
             display: inline-block !important;
             max-width: 300px !important;
-            white-space: nowrap !important;
-            overflow: hidden !important;
-            text-overflow: ellipsis !important;
+            white-space: normal !important;
+            overflow: visible !important;
+            word-break: break-word !important;
+            line-height: 1.3 !important;
         }`;
 
         let existingStyle = styleTag.html() || '';
