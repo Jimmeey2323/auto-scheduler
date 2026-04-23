@@ -3922,7 +3922,7 @@ Return ONLY valid JSON, no other text.`;
     cleanupStaticThemeArtifacts() {
         if (!this.$) return;
 
-        this.$('.theme-row-highlight, .theme-index-band, .theme-index-entry, .theme-index-title, .theme-static-label').remove();
+        this.$('.theme-row-highlight, .theme-index-row, .theme-index-band, .theme-index-entry, .theme-index-title, .theme-static-label').remove();
         if (this.shouldRenderStaticTheme()) {
             this.$('.theme-badge').remove();
         }
@@ -3994,6 +3994,11 @@ Return ONLY valid JSON, no other text.`;
         }
 
         const staticThemeCSS = `
+        .theme-index-row {
+            display: flex !important;
+            align-items: center !important;
+        }
+
         .theme-row-highlight,
         .theme-index-band {
             border-radius: 8px !important;
@@ -4008,6 +4013,7 @@ Return ONLY valid JSON, no other text.`;
         }
 
         .theme-index-band {
+            flex-shrink: 0 !important;
             transform: none !important;
             transform-origin: left center;
         }
@@ -4031,6 +4037,7 @@ Return ONLY valid JSON, no other text.`;
 
         let existingStyle = styleTag.html() || '';
         existingStyle = existingStyle
+            .replace(/\.theme-index-row\s*\{[^}]+\}/gs, '')
             .replace(/\.theme-row-highlight,\s*\.theme-index-band\s*\{[^}]+\}/gs, '')
             .replace(/\.theme-row-highlight\s*\{[^}]+\}/gs, '')
             .replace(/\.theme-index-band\s*\{[^}]+\}/gs, '')
@@ -4721,10 +4728,8 @@ Return ONLY valid JSON, no other text.`;
             const bandBottom = bottom - 2;
             const color = this.staticThemeColorMap.get(themeName) || '#fff0a6';
             const surfaceStyles = this.getThemeSurfaceStyles(color, 'index');
-            const bandHtml = `<span class="theme-index-band" style="position:absolute;left:${bandLeft}px;bottom:${bandBottom}px;width:${bandWidth}px;height:${bandHeight}px;background:${surfaceStyles.background};z-index:1;display:block;border-radius:8px;border:${surfaceStyles.border};box-shadow:${surfaceStyles.boxShadow};backdrop-filter:${surfaceStyles.backdropFilter};-webkit-backdrop-filter:${surfaceStyles.WebkitBackdropFilter};opacity:1;"></span>`;
-            const entryHtml = `<span class="t v0 s8 theme-index-entry" style="left:${textLeft}px;bottom:${bottom}px;letter-spacing:0.32px;z-index:2;font-family:Montserrat-Bold_1z,Montserrat-Bold_21,Montserrat,sans-serif;font-size:12px;font-style:normal;font-weight:700;color:#453b2a;">${themeName}</span>`;
-            $container.append(bandHtml);
-            $container.append(entryHtml);
+            const rowHtml = `<div class="theme-index-row" style="position:absolute;left:${bandLeft}px;bottom:${bandBottom}px;display:flex;align-items:center;min-height:${bandHeight}px;z-index:2;"><span class="theme-index-band" style="display:block;flex-shrink:0;width:${bandWidth}px;height:${bandHeight}px;background:${surfaceStyles.background};border-radius:8px;border:${surfaceStyles.border};box-shadow:${surfaceStyles.boxShadow};backdrop-filter:${surfaceStyles.backdropFilter};-webkit-backdrop-filter:${surfaceStyles.WebkitBackdropFilter};opacity:1;"></span><span class="theme-index-entry" style="margin-left:${legendLabelGap}px;letter-spacing:0.32px;font-family:Montserrat-Bold_1z,Montserrat-Bold_21,Montserrat,sans-serif;font-size:12px;font-style:normal;font-weight:700;color:#453b2a;">${themeName}</span></div>`;
+            $container.append(rowHtml);
         });
     }
 
